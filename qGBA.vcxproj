@@ -151,7 +151,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\logging.cpp" />
     <ClCompile Include="src\qGBA.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\logging.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

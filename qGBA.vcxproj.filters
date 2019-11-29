@@ -18,5 +18,13 @@
     <ClCompile Include="src\qGBA.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\logging.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\logging.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
