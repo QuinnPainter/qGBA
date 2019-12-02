@@ -1,5 +1,7 @@
 #include "logging.hpp"
 #include "helpers.hpp"
+#include "arm7tdmi.hpp"
+#include "memory.hpp"
 
 int main(int argc, char** argv)
 {
@@ -101,6 +103,14 @@ int main(int argc, char** argv)
 	}
 	//0xBE and 0xBF - Reserved space (All 0). Doesn't matter.
 	//Rest of the header only matters for multiboot.
+
+	memory mem(rom);
+	arm7tdmi CPU(&mem, false);
+
+	for (int i = 0; i < 10; i++)
+	{
+		CPU.step();
+	}
 
 	delete[] rom;
 	logging::info("Exited successfully", "qGBA");

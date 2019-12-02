@@ -24,12 +24,24 @@
     <ClCompile Include="src\helpers.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\arm7tdmi.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\memory.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\logging.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\helpers.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\arm7tdmi.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\memory.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

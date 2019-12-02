@@ -151,13 +151,17 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\arm7tdmi.cpp" />
     <ClCompile Include="src\helpers.cpp" />
     <ClCompile Include="src\logging.cpp" />
+    <ClCompile Include="src\memory.cpp" />
     <ClCompile Include="src\qGBA.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\arm7tdmi.hpp" />
     <ClInclude Include="src\helpers.hpp" />
     <ClInclude Include="src\logging.hpp" />
+    <ClInclude Include="src\memory.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
