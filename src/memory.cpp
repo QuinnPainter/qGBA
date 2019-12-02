@@ -36,9 +36,8 @@ uint8_t memory::get8(uint32_t addr)
 	}
 	else if (addr < 0x03000000)
 	{
-		//Unused area
-		logging::warning("Tried to read from unused area: " + helpers::intToHex(addr), "memory");
-		return 0;
+		//EWRAM mirrors
+		return ewram[(addr - 0x02000000) % 0x40000];
 	}
 	else if (addr < 0x03008000)
 	{
@@ -46,9 +45,8 @@ uint8_t memory::get8(uint32_t addr)
 	}
 	else if (addr < 0x04000000)
 	{
-		//Unused area
-		logging::warning("Tried to read from unused area: " + helpers::intToHex(addr), "memory");
-		return 0;
+		//IWRAM mirrors
+		return iwram[(addr - 0x03000000) % 0x8000];
 	}
 	else if (addr < 0x04000400)
 	{
