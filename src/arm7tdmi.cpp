@@ -157,10 +157,87 @@ void arm7tdmi::step()
 
 	if (checkCondCode(Pipeline.executeInstr))
 	{
-		logging::info("Execute instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
-		if ((Pipeline.executeInstr & 0xA000000) == 0xA000000)
+		//logging::info("Execute instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+		switch ((Pipeline.executeInstr >> 26) & 0b11)
 		{
-			ARM_Branch();
+			case 0b00:
+			{
+				if ((Pipeline.executeInstr & 0x12FFF10) == 0x12FFF10)
+				{
+					ARM_BranchExchange();
+				}
+				else if ((Pipeline.executeInstr & 0x2000000) == 0x2000000 || (Pipeline.executeInstr & 0x80) != 0x80)
+				{
+					logging::error("Unimplemented instruction: Data Processing: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+				}
+				else if ((Pipeline.executeInstr & 0x60) == 0)
+				{
+					switch ((Pipeline.executeInstr >> 23) & 0b11)
+					{
+						case 0b00:
+							logging::error("Unimplemented instruction: Multiply: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+							break;
+						case 0b01:
+							logging::error("Unimplemented instruction: Multiply Long: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+							break;
+						case 0b10:
+							logging::error("Unimplemented instruction: Single Data Swap: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+							break;
+						case 0b11:
+							//The datasheet doesn't say what this should be.
+							logging::error("Undefined instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+							break;
+					}
+				}
+				else
+				{
+					if (Pipeline.executeInstr & 0x400000)
+					{
+						logging::error("Unimplemented instruction: HalfwordDataTransfer(ImmOffset): " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					}
+					else
+					{
+						logging::error("Unimplemented instruction: HalfwordDataTransfer(RegOffset): " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					}
+				}
+				break;
+			}
+			case 0b01:
+			{
+				if ((Pipeline.executeInstr & 0x2000010) == 0x2000010)
+				{
+					logging::error("Undefined instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+				}
+				else
+				{
+					logging::error("Unimplemented instruction: Single Data Transfer: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+				}
+				break;
+			}
+			case 0b10:
+			{
+				if ((Pipeline.executeInstr >> 25) & 1)
+				{
+					ARM_Branch();
+				}
+				else
+				{
+					logging::error("Unimplemented instruction: Block Data Transfer: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+				}
+				break;
+			}
+			case 0b11:
+			{
+				if (((Pipeline.executeInstr >> 24) & 0xF) == 0xF)
+				{
+					logging::error("Unimplemented instruction: Software Interrupt: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+				}
+				else
+				{
+					logging::error("Undefined coprocessor instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+				}
+				break;
+			}
 		}
 	}
 }
@@ -183,4 +260,19 @@ void arm7tdmi::ARM_Branch()
 		setReg(15, getReg(15) + offset);
 		logging::info("Branched to " + helpers::intToHex(getReg(15)), "arm7tdmi");
 	}
+}
+
+void arm7tdmi::ARM_BranchExchange()
+{
+	uint32_t addr = state.R[(Pipeline.executeInstr & 0xF)];
+	setReg(15, addr);
+	if (addr & 0x1)
+	{
+		logging::error("Tried to switch to THUMB!", "arm7tdmi");
+	}
+	else
+	{
+		logging::info("Continue in ARM", "arm7tdmi");
+	}
+	logging::info("Branched and exchanged to " + helpers::intToHex(getReg(15)), "arm7tdmi");
 }

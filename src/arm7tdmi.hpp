@@ -37,4 +37,5 @@ class arm7tdmi
 
 		//ARM instructions
 		void ARM_Branch();
+		void ARM_BranchExchange();
 };
