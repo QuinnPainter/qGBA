@@ -230,7 +230,7 @@ void arm7tdmi::step()
 				}
 				else
 				{
-					logging::error("Unimplemented instruction: Single Data Transfer: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					ARM_SingleDataTransfer();
 				}
 				break;
 			}
@@ -529,6 +529,79 @@ void arm7tdmi::ARM_PSRTransfer()
 			logging::error("Invalid PSR instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
 			break;
 		}
+	}
+}
+
+void arm7tdmi::ARM_SingleDataTransfer()
+{
+	bool offsetImmediate = Pipeline.executeInstr & 0x2000000;
+	bool preIndexing = Pipeline.executeInstr & 0x1000000;
+	bool offsetUp = Pipeline.executeInstr & 0x800000;
+	bool byteOrWord = Pipeline.executeInstr & 0x400000;
+	bool writeback = Pipeline.executeInstr & 0x200000;
+	bool loadOrStore = Pipeline.executeInstr & 0x100000;
+	uint8_t baseAddrReg = (Pipeline.executeInstr >> 16) & 0xF;
+	uint8_t srcReg = (Pipeline.executeInstr >> 12) & 0xF;
+	uint32_t offset;
+
+	if (offsetImmediate)
+	{
+		offset = Pipeline.executeInstr & 0xFFF;
+	}
+	else
+	{
+		offset = getReg(Pipeline.executeInstr & 0xF);
+		uint8_t shiftInfo = (Pipeline.executeInstr >> 4) & 0xFF;
+
+		uint8_t shiftAmount = shiftInfo >> 3;
+
+		if (!((shiftInfo & 1) && shiftAmount == 0))
+		{
+			switch ((shiftInfo >> 1) & 0b11)
+			{
+				case 0b00: logicalShiftLeft(&offset, shiftAmount); break;
+				case 0b01: logicalShiftRight(&offset, shiftAmount); break;
+				case 0b10: arithmeticShiftRight(&offset, shiftAmount); break;
+				case 0b11: rotateRight(&offset, shiftAmount); break;
+			}
+		}
+	}
+
+	if (!offsetUp) { offset = (~offset) + 1; }
+
+	uint32_t addr = getReg(baseAddrReg);
+	if (preIndexing) { addr += offset; }
+
+	if (loadOrStore)
+	{
+		// Load
+		if (byteOrWord)
+		{
+			setReg(srcReg, Memory->get8(addr));
+		}
+		else
+		{
+			setReg(srcReg, Memory->get32(addr));
+		}
+	}
+	else
+	{
+		// Store
+		if (byteOrWord)
+		{
+			Memory->set8(addr, getReg(srcReg) & 0xFF);
+		}
+		else
+		{
+			Memory->set32(addr, getReg(srcReg));
+		}
+	}
+
+	if (!preIndexing) { addr += offset; }
+
+	if ((!preIndexing) || (preIndexing && writeback))
+	{
+		setReg(baseAddrReg, addr);
 	}
 }
 

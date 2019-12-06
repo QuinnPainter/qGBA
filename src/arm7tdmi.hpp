@@ -42,6 +42,7 @@ class arm7tdmi
 		void ARM_BranchExchange();
 		void ARM_DataProcessing();
 		void ARM_PSRTransfer();
+		void ARM_SingleDataTransfer();
 
 		//Helper functions
 		void setFlagsLogical(uint32_t result, int carryOut);
