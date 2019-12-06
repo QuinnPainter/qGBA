@@ -135,6 +135,26 @@ void arm7tdmi::setReg(int index, uint32_t value)
 	}
 }
 
+uint32_t arm7tdmi::getSPSR()
+{
+	switch (state.CPSR & 0xF)
+	{
+		case 0b0010: return state.SPSR_irq;
+		case 0b0011: return state.SPSR_svc;
+		default: logging::error("Can't get SPSR in User/System mode", "arm7tdmi"); return 0;
+	}
+}
+
+void arm7tdmi::setSPSR(uint32_t value)
+{
+	switch (state.CPSR & 0xF)
+	{
+		case 0b0010: state.SPSR_irq = value; break;
+		case 0b0011: state.SPSR_svc = value; break;
+		default: logging::error("Can't set SPSR in User/System mode", "arm7tdmi"); break;
+	}
+}
+
 void arm7tdmi::step()
 {
 	if (Pipeline.valid)
@@ -168,7 +188,7 @@ void arm7tdmi::step()
 				}
 				else if ((Pipeline.executeInstr & 0x2000000) == 0x2000000 || (Pipeline.executeInstr & 0x80) != 0x80)
 				{
-					logging::error("Unimplemented instruction: Data Processing: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					ARM_DataProcessing();
 				}
 				else if ((Pipeline.executeInstr & 0x60) == 0)
 				{
@@ -275,4 +295,367 @@ void arm7tdmi::ARM_BranchExchange()
 		logging::info("Continue in ARM", "arm7tdmi");
 	}
 	logging::info("Branched and exchanged to " + helpers::intToHex(getReg(15)), "arm7tdmi");
+}
+
+void arm7tdmi::ARM_DataProcessing()
+{
+	bool setFlag = Pipeline.executeInstr & 0x100000;
+	uint8_t opcode = (Pipeline.executeInstr >> 21) & 0xF;
+	uint8_t operand1 = getReg((Pipeline.executeInstr >> 16) & 0xF);
+	uint8_t destReg = (Pipeline.executeInstr >> 12) & 0xF;
+	uint32_t operand2;
+	if (!setFlag && (opcode >> 2) == 0b10)
+	{
+		ARM_PSRTransfer();
+		return;
+	}
+
+	int shiftCarryOut = 2;
+	if (Pipeline.executeInstr & 0x2000000)
+	{
+		//Immediate Value
+		uint32_t value = Pipeline.executeInstr & 0xFF;
+		uint8_t shift = ((Pipeline.executeInstr >> 8) & 0xF) * 2;
+		//ROR
+		for (int i = 0; i < shift; i++)
+		{
+			uint32_t carry = value & 1;
+			value >>= 1;
+			value |= carry << 31;
+		}
+		operand2 = value;
+	}
+	else
+	{
+		//Register
+		operand2 = getReg(Pipeline.executeInstr & 0xF);
+		uint8_t shiftInfo = (Pipeline.executeInstr >> 4) & 0xFF;
+
+		uint8_t shiftAmount;
+		if (shiftInfo & 1)
+		{
+			if ((shiftInfo >> 4) == 15)
+			{
+				logging::error("DataProcessing: Shift amount can't be PC", "arm7tdmi");
+			}
+			shiftAmount = getReg(shiftInfo >> 4) & 0xFF;
+		}
+		else
+		{
+			shiftAmount = shiftInfo >> 3;
+		}
+
+		if (!((shiftInfo & 1) && shiftAmount == 0))
+		{
+			switch ((shiftInfo >> 1) & 0b11)
+			{
+				case 0b00: shiftCarryOut = logicalShiftLeft(&operand2, shiftAmount); break;
+				case 0b01: shiftCarryOut = logicalShiftRight(&operand2, shiftAmount); break;
+				case 0b10: shiftCarryOut = arithmeticShiftRight(&operand2, shiftAmount); break;
+				case 0b11: shiftCarryOut = rotateRight(&operand2, shiftAmount); break;
+			}
+		}
+	}
+
+	uint32_t result;
+	bool carryIn = (shiftCarryOut < 2) ? shiftCarryOut : state.CPSR & Cflag;
+	switch (opcode)
+	{
+		case 0b0000: //AND
+			result = operand1 & operand2;
+			setReg(destReg, result);
+			if (setFlag) { setFlagsLogical(result, shiftCarryOut); }
+			break;
+		case 0b0001: //EOR
+			result = operand1 ^ operand2;
+			setReg(destReg, result);
+			if (setFlag) { setFlagsLogical(result, shiftCarryOut); }
+			break;
+		case 0b0010: //SUB
+			result = operand1 - operand2;
+			setReg(destReg, result);
+			if (setFlag) { setFlagsArithmetic(operand1, operand2, result, false); }
+			break;
+		case 0b0011: //RSB
+			result = operand2 - operand1;
+			setReg(destReg, result);
+			if (setFlag) { setFlagsArithmetic(operand2, operand1, result, false); }
+			break;
+		case 0b0100: //ADD
+			result = operand1 + operand2;
+			setReg(destReg, result);
+			if (setFlag) { setFlagsArithmetic(operand1, operand2, result, true); }
+			break;
+		case 0b0101: //ADC
+			result = operand1 + operand2 + carryIn;
+			setReg(destReg, result);
+			if (setFlag) { setFlagsArithmetic(operand1, operand2 + carryIn, result, true); }
+			break;
+		case 0b0110: //SBC
+			result = operand1 - operand2 + carryIn - 1;
+			setReg(destReg, result);
+			if (setFlag) { setFlagsArithmetic(operand1, operand2 + carryIn - 1, result, false); }
+			break;
+		case 0b0111: //RSC
+			result = operand2 - operand1 + carryIn - 1;
+			setReg(destReg, result);
+			if (setFlag) { setFlagsArithmetic(operand2, operand1 + carryIn - 1, result, false); }
+			break;
+		case 0b1000: //TST
+			result = operand1 & operand2;
+			setFlagsLogical(result, shiftCarryOut);
+			break;
+		case 0b1001: //TEQ
+			result = operand1 ^ operand2;
+			setFlagsLogical(result, shiftCarryOut);
+			break;
+		case 0b1010: //CMP
+			result = operand1 - operand2;
+			setFlagsArithmetic(operand1, operand2, result, false);
+			break;
+		case 0b1011: //CMN
+			result = operand1 + operand2;
+			setFlagsArithmetic(operand1, operand2, result, true);
+			break;
+		case 0b1100: //ORR
+			result = operand1 | operand2;
+			setReg(destReg, result);
+			if (setFlag) { setFlagsLogical(result, shiftCarryOut); }
+			break;
+		case 0b1101: //MOV
+			setReg(destReg, operand2);
+			if (setFlag) { setFlagsLogical(operand2, shiftCarryOut); }
+			break;
+		case 0b1110: //BIC
+			result = operand1 & ~operand2;
+			setReg(destReg, result);
+			if (setFlag) { setFlagsLogical(result, shiftCarryOut); }
+			break;
+		case 0b1111: //MVN
+			result = ~operand2;
+			setReg(destReg, result);
+			if (setFlag) { setFlagsLogical(result, shiftCarryOut); }
+			break;
+	}
+
+	if (setFlag && (destReg == 15))
+	{
+		state.CPSR = getSPSR();
+	}
+}
+
+void arm7tdmi::ARM_PSRTransfer()
+{
+	bool PSR = Pipeline.executeInstr & 0x400000; //0 = CPSR  1 = SPSR
+
+	switch ((Pipeline.executeInstr >> 16) & 0x3F)
+	{
+		case 0b001111: // MRS (transfer PSR to register)
+		{
+			uint8_t destReg = (Pipeline.executeInstr >> 12) & 0xF;
+			if (destReg == 15)
+			{
+				logging::error("MRS destination register can't be R15", "arm7tdmi");
+				break;
+			}
+			if (PSR)
+			{
+				setReg(destReg, getSPSR());
+			}
+			else
+			{
+				setReg(destReg, state.CPSR);
+			}
+			break;
+		}
+		case 0b101001: // MSR (transfer register to PSR)
+		{
+			uint8_t srcReg = Pipeline.executeInstr & 0xF;
+			if (srcReg == 15)
+			{
+				logging::error("MSR source register can't be R15", "arm7tdmi");
+				break;
+			}
+			if (PSR)
+			{
+				setSPSR(getReg(srcReg));
+			}
+			else
+			{
+				state.CPSR = srcReg; //TODO: handle mode changes here
+			}
+			break;
+		}
+		case 0b101000: // MSR (transfer value to PSR flag bits)
+		{
+			uint32_t src;
+			if (Pipeline.executeInstr & 0x2000000)
+			{
+				// Source is register
+				uint8_t srcReg = Pipeline.executeInstr & 0xF;
+				if (srcReg == 15)
+				{
+					logging::error("MSR source register can't be R15", "arm7tdmi");
+					break;
+				}
+				src = getReg(srcReg);
+			}
+			else
+			{
+				// Source is immediate
+				uint32_t value = Pipeline.executeInstr & 0xFF;
+				uint8_t shift = ((Pipeline.executeInstr >> 8) & 0xF) * 2;
+				//ROR
+				for (int i = 0; i < shift; i++)
+				{
+					uint32_t carry = value & 1;
+					value >>= 1;
+					value |= carry << 31;
+				}
+				src = value;
+			}
+			if (PSR)
+			{
+				setSPSR((getSPSR() & 0xFFFFFFF) | (src & 0xF0000000));
+			}
+			else
+			{
+				state.CPSR = ((state.CPSR & 0xFFFFFFF) | (src & 0xF0000000));
+			}
+			break;
+		}
+		default:
+		{
+			logging::error("Invalid PSR instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+			break;
+		}
+	}
+}
+
+void arm7tdmi::setFlagsLogical(uint32_t result, int carryOut)
+{
+	state.CPSR = ((result == 0) ? state.CPSR | Zflag : state.CPSR & ~Zflag);
+	state.CPSR = ((result >> 31) ? state.CPSR | Nflag : state.CPSR & ~Nflag);
+	if (carryOut < 2)
+	{
+		state.CPSR = (carryOut ? state.CPSR | Cflag : state.CPSR & ~Cflag);
+	}
+}
+
+void arm7tdmi::setFlagsArithmetic(uint32_t op1, uint32_t op2, uint32_t result, bool addition)
+{
+	state.CPSR = ((result == 0) ? state.CPSR | Zflag : state.CPSR & ~Zflag);
+	state.CPSR = ((result >> 31) ? state.CPSR | Nflag : state.CPSR & ~Nflag);
+	//http://teaching.idallen.com/dat2343/10f/notes/040_overflow.txt
+	//Carry flag
+	if (addition)
+	{
+		state.CPSR = (((uint64_t)op1 + (uint64_t)op2 > 0xFFFFFFFF) ? state.CPSR | Cflag : state.CPSR & ~Cflag);
+	}
+	else
+	{
+		state.CPSR = ((result > op1) ? state.CPSR | Cflag : state.CPSR & ~Cflag);
+	}
+	//Overflow flag
+	uint32_t subAdjOp2;
+	if (!addition)
+	{
+		subAdjOp2 = (~op2 + 1);
+	}
+	else
+	{
+		subAdjOp2 = op2;
+	}
+	bool op1msb = op1 >> 31;
+	bool op2msb = subAdjOp2 >> 31;
+	bool resultmsb = result >> 31;
+	if ((!op1msb && !op2msb && resultmsb) || (op1msb && op2msb && !resultmsb))
+	{
+		state.CPSR |= Vflag;
+	}
+	else
+	{
+		state.CPSR &= ~Vflag;
+	}
+}
+
+int arm7tdmi::logicalShiftLeft(uint32_t* value, int shiftAmount)
+{
+	if (shiftAmount > 0)
+	{
+		bool carryOut = (1 << (32 - shiftAmount)) & *value;
+		*value <<= shiftAmount;
+		return carryOut;
+	}
+	else
+	{
+		//Carry isn't affected
+		return 2;
+	}
+}
+
+bool arm7tdmi::logicalShiftRight(uint32_t* value, int shiftAmount)
+{
+	if (shiftAmount > 0)
+	{
+		bool carryOut = (1 << (shiftAmount - 1)) & *value;
+		*value >>= shiftAmount;
+		return carryOut;
+	}
+	else
+	{
+		*value = 0;
+		return *value & 0x80000000;
+	}
+}
+
+bool arm7tdmi::arithmeticShiftRight(uint32_t* value, int shiftAmount)
+{
+	if (shiftAmount > 0)
+	{
+		bool carryOut = (1 << (shiftAmount - 1)) & *value;
+		uint32_t signBit = *value & 0x80000000;
+		for (int i = 0; i < shiftAmount; i++)
+		{
+			*value >>= 1;
+			*value |= signBit;
+		}
+		return carryOut;
+	}
+	else
+	{
+		if (*value & 0x80000000)
+		{
+			*value = 0xFFFFFFFF;
+			return true;
+		}
+		else
+		{
+			*value = 0;
+			return false;
+		}
+	}
+}
+
+bool arm7tdmi::rotateRight(uint32_t* value, int shiftAmount)
+{
+	if (shiftAmount > 0)
+	{
+		bool carryOut = (1 << (shiftAmount - 1)) & *value;
+		for (int i = 0; i < shiftAmount; i++)
+		{
+			uint32_t carry = *value & 1;
+			*value >>= 1;
+			*value |= carry << 31;
+		}
+		return carryOut;
+	}
+	else
+	{
+		bool carryIn = state.CPSR & Cflag;
+		bool carryOut = *value & 1;
+		*value >>= 1;
+		*value |= (uint32_t)carryIn << 31;
+		return carryOut;
+	}
 }

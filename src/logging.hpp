@@ -6,7 +6,7 @@ class logging
     private:
         //private constructor means no instances of this object can be created
         logging() {}
-		static std::string format(std::string toLog, std::string level, std::string source);
+		static std::string format(std::string toLog, std::string level, std::string color, std::string source);
     public:
         static void info(std::string toLog, std::string source = "?");
 		static void important(std::string toLog, std::string source = "?");

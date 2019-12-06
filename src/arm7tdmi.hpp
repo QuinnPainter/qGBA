@@ -34,8 +34,20 @@ class arm7tdmi
 		bool checkCondCode(uint32_t instr);
 		uint32_t getReg(int index);
 		void setReg(int index, uint32_t value);
+		uint32_t getSPSR();
+		void setSPSR(uint32_t value);
 
 		//ARM instructions
 		void ARM_Branch();
 		void ARM_BranchExchange();
+		void ARM_DataProcessing();
+		void ARM_PSRTransfer();
+
+		//Helper functions
+		void setFlagsLogical(uint32_t result, int carryOut);
+		void setFlagsArithmetic(uint32_t op1, uint32_t op2, uint32_t result, bool addition);
+		int logicalShiftLeft(uint32_t* value, int shiftAmount);
+		bool logicalShiftRight(uint32_t* value, int shiftAmount);
+		bool arithmeticShiftRight(uint32_t* value, int shiftAmount);
+		bool rotateRight(uint32_t* value, int shiftAmount);
 };

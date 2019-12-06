@@ -21,35 +21,35 @@
 #define BOLDWHITE   "\033[1m\033[37m"      /* Bold White */
 
 //maybe this should be a macro?
-std::string logging::format(std::string toLog, std::string level, std::string source)
+std::string logging::format(std::string toLog, std::string level, std::string color, std::string source)
 {
-	return "[" + source + "] " + "[" + level + "] " + toLog;
+	return "[" + source + "] " + "[" + color + level + RESET + "] " + toLog;
 }
 
 void logging::info(std::string toLog, std::string source)
 {
-	std::cout << WHITE << format(toLog, "info", source) << RESET << std::endl;
+	std::cout << format(toLog, "info", WHITE, source) << std::endl;
 }
 
 //same as info but with different colour text so it's easy to spot
 void logging::important(std::string toLog, std::string source)
 {
-	std::cout << GREEN << format(toLog, "important", source) << RESET << std::endl;
+	std::cout << format(toLog, "important", GREEN, source) << std::endl;
 }
 
 void logging::warning(std::string toLog, std::string source)
 {
-	std::cout << YELLOW << format(toLog, "warning", source) << RESET << std::endl;
+	std::cout << format(toLog, "warning", YELLOW, source) << std::endl;
 }
 
 void logging::error(std::string toLog, std::string source)
 {
-	std::cerr << RED << format(toLog, "error", source) << RESET << std::endl;
+	std::cerr << format(toLog, "error", RED, source)<< std::endl;
 }
 
 //for errors so bad that we need to immediately exit
 void logging::fatal(std::string toLog, std::string source)
 {
-	std::cerr << RED << format(toLog, "fatal", source) << RESET << std::endl;
+	std::cerr << format(toLog, "fatal", RED, source) << std::endl;
 	exit(1);
 }

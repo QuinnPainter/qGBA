@@ -16,6 +16,7 @@ class helpers
 			stream << std::uppercase << std::hex << (int)i;
 			return stream.str();
 		}
+
 		template<typename T>
 		static void swap(T* var1, T* var2)
 		{
@@ -23,6 +24,7 @@ class helpers
 			*var1 = *var2;
 			*var2 = temp;
 		}
+
 		//Sign extends a number. X is the number and bits is the number of bits the number is now.
 		//Example : Sign extend a 24 bit number to 32 bit: x is a uint32_t, and bits is 24
 		//https://stackoverflow.com/questions/42534749/signed-extension-from-24-bit-to-32-bit-in-c
