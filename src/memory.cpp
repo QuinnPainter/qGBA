@@ -171,6 +171,6 @@ void memory::set32(uint32_t addr, uint32_t value)
 {
 	set8(addr, value & 0xFF);
 	set8(addr + 1, (value >> 8) & 0xFF);
-	set8(addr + 1, (value >> 16) & 0xFF);
-	set8(addr + 1, (value >> 24) & 0xFF);
+	set8(addr + 2, (value >> 16) & 0xFF);
+	set8(addr + 3, (value >> 24) & 0xFF);
 }
