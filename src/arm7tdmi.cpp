@@ -301,7 +301,7 @@ void arm7tdmi::ARM_DataProcessing()
 {
 	bool setFlag = Pipeline.executeInstr & 0x100000;
 	uint8_t opcode = (Pipeline.executeInstr >> 21) & 0xF;
-	uint8_t operand1 = getReg((Pipeline.executeInstr >> 16) & 0xF);
+	uint32_t operand1 = getReg((Pipeline.executeInstr >> 16) & 0xF);
 	uint8_t destReg = (Pipeline.executeInstr >> 12) & 0xF;
 	uint32_t operand2;
 	if (!setFlag && (opcode >> 2) == 0b10)
@@ -309,6 +309,7 @@ void arm7tdmi::ARM_DataProcessing()
 		ARM_PSRTransfer();
 		return;
 	}
+	logging::info("Data Processing on R" + std::to_string(destReg), "arm7tdmi");
 
 	int shiftCarryOut = 2;
 	if (Pipeline.executeInstr & 0x2000000)
@@ -446,6 +447,7 @@ void arm7tdmi::ARM_DataProcessing()
 
 void arm7tdmi::ARM_PSRTransfer()
 {
+	logging::info("PSR transfer", "arm7tdmi");
 	bool PSR = Pipeline.executeInstr & 0x400000; //0 = CPSR  1 = SPSR
 
 	switch ((Pipeline.executeInstr >> 16) & 0x3F)
@@ -534,6 +536,7 @@ void arm7tdmi::ARM_PSRTransfer()
 
 void arm7tdmi::ARM_SingleDataTransfer()
 {
+	logging::info("Single Data Transfer", "arm7tdmi");
 	bool offsetImmediate = Pipeline.executeInstr & 0x2000000;
 	bool preIndexing = Pipeline.executeInstr & 0x1000000;
 	bool offsetUp = Pipeline.executeInstr & 0x800000;
