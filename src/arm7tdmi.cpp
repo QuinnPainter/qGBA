@@ -285,7 +285,7 @@ void arm7tdmi::ARM_Branch()
 void arm7tdmi::ARM_BranchExchange()
 {
 	uint32_t addr = state.R[(Pipeline.executeInstr & 0xF)];
-	setReg(15, addr);
+	setReg(15, addr & (~0x1));
 	if (addr & 0x1)
 	{
 		logging::error("Tried to switch to THUMB!", "arm7tdmi");
