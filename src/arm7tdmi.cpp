@@ -77,6 +77,8 @@ bool arm7tdmi::checkCondCode(uint32_t instr)
 			logging::error("Invalid condition code at " + helpers::intToHex(state.R[15] - 8), "arm7tdmi");
 			return true;
 	}
+	logging::error("what is this condition code", "armtdmi");
+	return false;
 }
 
 uint32_t arm7tdmi::getReg(int index)
@@ -160,103 +162,249 @@ void arm7tdmi::step()
 	if (Pipeline.valid)
 	{
 		//Progress the pipeline
-		state.R[15] += 4;
-		Pipeline.executeInstr = Pipeline.decodeInstr;
-		Pipeline.decodeInstr = Pipeline.fetchInstr;
-		Pipeline.fetchInstr = Memory->get32(state.R[15]);
+		if (state.CPSR & 0x20)
+		{
+			//THUMB
+			state.R[15] += 2;
+			Pipeline.executeInstr = Pipeline.decodeInstr;
+			Pipeline.decodeInstr = Pipeline.fetchInstr;
+			Pipeline.fetchInstr = Memory->get16(state.R[15]);
+		}
+		else
+		{
+			//ARM
+			state.R[15] += 4;
+			Pipeline.executeInstr = Pipeline.decodeInstr;
+			Pipeline.decodeInstr = Pipeline.fetchInstr;
+			Pipeline.fetchInstr = Memory->get32(state.R[15]);
+		}
 	}
 	else
 	{
 		//Rebuild the pipeline
-		Pipeline.executeInstr = Memory->get32(state.R[15]);
-		Pipeline.decodeInstr = Memory->get32(state.R[15] + 4);
-		Pipeline.fetchInstr = Memory->get32(state.R[15] + 8);
-		state.R[15] += 8;
+		if (state.CPSR & 0x20)
+		{
+			//THUMB
+			Pipeline.executeInstr = Memory->get16(state.R[15]);
+			Pipeline.decodeInstr = Memory->get16(state.R[15] + 2);
+			Pipeline.fetchInstr = Memory->get16(state.R[15] + 4);
+		}
+		else
+		{
+			//ARM
+			Pipeline.executeInstr = Memory->get32(state.R[15]);
+			Pipeline.decodeInstr = Memory->get32(state.R[15] + 4);
+			Pipeline.fetchInstr = Memory->get32(state.R[15] + 8);
+			state.R[15] += 8;
+		}
 		Pipeline.valid = true;
 	}
 
-	if (checkCondCode(Pipeline.executeInstr))
+	if (state.CPSR & 0x20)
 	{
-		//logging::info("Execute instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
-		switch ((Pipeline.executeInstr >> 26) & 0b11)
+		//THUMB
+		switch ((Pipeline.executeInstr >> 13) & 0b111)
 		{
-			case 0b00:
+			case 0b000:
 			{
-				if ((Pipeline.executeInstr & 0x12FFF10) == 0x12FFF10)
+				if ((Pipeline.executeInstr & 0x1800) == 0x1800)
 				{
-					ARM_BranchExchange();
-				}
-				else if ((Pipeline.executeInstr & 0x2000000) == 0x2000000 || (Pipeline.executeInstr & 0x80) != 0x80)
-				{
-					ARM_DataProcessing();
-				}
-				else if ((Pipeline.executeInstr & 0x60) == 0)
-				{
-					switch ((Pipeline.executeInstr >> 23) & 0b11)
-					{
-						case 0b00:
-							logging::error("Unimplemented instruction: Multiply: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
-							break;
-						case 0b01:
-							logging::error("Unimplemented instruction: Multiply Long: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
-							break;
-						case 0b10:
-							logging::error("Unimplemented instruction: Single Data Swap: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
-							break;
-						case 0b11:
-							//The datasheet doesn't say what this should be.
-							logging::error("Undefined instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
-							break;
-					}
+					logging::error("Unimplemented THUMB instruction: Add/Subtract: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
 				}
 				else
 				{
-					if (Pipeline.executeInstr & 0x400000)
+					logging::error("Unimplemented THUMB instruction: Move Shifted Register: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+				}
+				break;
+			}
+			case 0b001:
+			{
+				logging::error("Unimplemented THUMB instruction: Mv/Cmp/Add/Sub Immediate: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+				break;
+			}
+			case 0b010:
+			{
+				uint8_t checkBits = (Pipeline.executeInstr >> 10) & 0b111;
+				if (checkBits == 0b000)
+				{
+					logging::error("Unimplemented THUMB instruction: ALU Ops: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+				}
+				else if (checkBits == 0b001)
+				{
+					logging::error("Unimplemented THUMB instruction: Hi Reg Ops / Branch Exchange: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+				}
+				else if ((checkBits & 0b110) == 0b010)
+				{
+					logging::error("Unimplemented THUMB instruction: PC Relative Load: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+				}
+				else if ((checkBits & 0b100) == 0b100)
+				{
+					if (Pipeline.executeInstr & 0x200)
 					{
-						logging::error("Unimplemented instruction: HalfwordDataTransfer(ImmOffset): " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+						logging::error("Unimplemented THUMB instruction: Load/Store Sign-Extended: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
 					}
 					else
 					{
-						logging::error("Unimplemented instruction: HalfwordDataTransfer(RegOffset): " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+						logging::error("Unimplemented THUMB instruction: Load/Store Reg Offset: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
 					}
 				}
 				break;
 			}
-			case 0b01:
+			case 0b011:
 			{
-				if ((Pipeline.executeInstr & 0x2000010) == 0x2000010)
+				logging::error("Unimplemented THUMB instruction: Load/Store Immediate Offset: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+				break;
+			}
+			case 0b100:
+			{
+				if (Pipeline.executeInstr & 0x1000)
 				{
-					logging::error("Undefined instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					logging::error("Unimplemented THUMB instruction: SP Relative Load/Store: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
 				}
 				else
 				{
-					ARM_SingleDataTransfer();
+					logging::error("Unimplemented THUMB instruction: Load/Store Halfword: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
 				}
 				break;
 			}
-			case 0b10:
+			case 0b101:
 			{
-				if ((Pipeline.executeInstr >> 25) & 1)
+				if (Pipeline.executeInstr & 0x1000)
 				{
-					ARM_Branch();
+					if (Pipeline.executeInstr & 0x400)
+					{
+						logging::error("Unimplemented THUMB instruction: Push/Pop Registers: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					}
+					else
+					{
+						logging::error("Unimplemented THUMB instruction: Add Offset to SP: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					}
 				}
 				else
 				{
-					logging::error("Unimplemented instruction: Block Data Transfer: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					logging::error("Unimplemented THUMB instruction: Load Address: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
 				}
 				break;
 			}
-			case 0b11:
+			case 0b110:
 			{
-				if (((Pipeline.executeInstr >> 24) & 0xF) == 0xF)
+				if (Pipeline.executeInstr & 0x1000)
 				{
-					logging::error("Unimplemented instruction: Software Interrupt: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					if ((Pipeline.executeInstr & 0x0F00) == 0x0F00)
+					{
+						logging::error("Unimplemented THUMB instruction: Software Interrupt: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					}
+					else
+					{
+						logging::error("Unimplemented THUMB instruction: Conditional Branch: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					}
 				}
 				else
 				{
-					logging::error("Undefined coprocessor instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					logging::error("Unimplemented THUMB instruction: Multiple Load/Store: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
 				}
 				break;
+			}
+			case 0b111:
+			{
+				if (Pipeline.executeInstr & 0x1000)
+				{
+					logging::error("Unimplemented THUMB instruction: Long Branch with Link: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+				}
+				else
+				{
+					logging::error("Unimplemented THUMB instruction: Unconditional Branch: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+				}
+				break;
+			}
+		}
+	}
+	else
+	{
+		//ARM
+		if (checkCondCode(Pipeline.executeInstr))
+		{
+			//logging::info("Execute instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+			switch ((Pipeline.executeInstr >> 26) & 0b11)
+			{
+				case 0b00:
+				{
+					if ((Pipeline.executeInstr & 0x12FFF10) == 0x12FFF10)
+					{
+						ARM_BranchExchange();
+					}
+					else if ((Pipeline.executeInstr & 0x2000000) == 0x2000000 || (Pipeline.executeInstr & 0x80) != 0x80)
+					{
+						ARM_DataProcessing();
+					}
+					else if ((Pipeline.executeInstr & 0x60) == 0)
+					{
+						switch ((Pipeline.executeInstr >> 23) & 0b11)
+						{
+							case 0b00:
+								logging::error("Unimplemented instruction: Multiply: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+								break;
+							case 0b01:
+								logging::error("Unimplemented instruction: Multiply Long: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+								break;
+							case 0b10:
+								logging::error("Unimplemented instruction: Single Data Swap: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+								break;
+							case 0b11:
+								//The datasheet doesn't say what this should be.
+								logging::error("Undefined instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+								break;
+						}
+					}
+					else
+					{
+						if (Pipeline.executeInstr & 0x400000)
+						{
+							logging::error("Unimplemented instruction: HalfwordDataTransfer(ImmOffset): " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+						}
+						else
+						{
+							logging::error("Unimplemented instruction: HalfwordDataTransfer(RegOffset): " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+						}
+					}
+					break;
+				}
+				case 0b01:
+				{
+					if ((Pipeline.executeInstr & 0x2000010) == 0x2000010)
+					{
+						logging::error("Undefined instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					}
+					else
+					{
+						ARM_SingleDataTransfer();
+					}
+					break;
+				}
+				case 0b10:
+				{
+					if ((Pipeline.executeInstr >> 25) & 1)
+					{
+						ARM_Branch();
+					}
+					else
+					{
+						logging::error("Unimplemented instruction: Block Data Transfer: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					}
+					break;
+				}
+				case 0b11:
+				{
+					if (((Pipeline.executeInstr >> 24) & 0xF) == 0xF)
+					{
+						logging::error("Unimplemented instruction: Software Interrupt: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					}
+					else
+					{
+						logging::error("Undefined coprocessor instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					}
+					break;
+				}
 			}
 		}
 	}
@@ -288,7 +436,8 @@ void arm7tdmi::ARM_BranchExchange()
 	setReg(15, addr & (~0x1));
 	if (addr & 0x1)
 	{
-		logging::error("Tried to switch to THUMB!", "arm7tdmi");
+		state.CPSR |= 0x20;
+		logging::info("Switched to THUMB", "arm7tdmi");
 	}
 	else
 	{

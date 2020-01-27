@@ -85,6 +85,8 @@ uint8_t memory::get8(uint32_t addr)
 		logging::warning("Tried to read from unused area: " + helpers::intToHex(addr), "memory");
 		return 0;
 	}
+	logging::error("How did this happen", "memory");
+	return 0;
 }
 
 uint16_t memory::get16(uint32_t addr)
