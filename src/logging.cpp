@@ -44,7 +44,7 @@ void logging::warning(std::string toLog, std::string source)
 
 void logging::error(std::string toLog, std::string source)
 {
-	std::cerr << format(toLog, "error", RED, source)<< std::endl;
+	std::cerr << format(toLog, "error", RED, source) << std::endl;
 }
 
 //for errors so bad that we need to immediately exit

@@ -44,6 +44,11 @@ class arm7tdmi
 		void ARM_PSRTransfer();
 		void ARM_SingleDataTransfer();
 
+		//THUMB instructions
+		void THUMB_MoveShiftedRegister();
+		void THUMB_LoadPCRelative();
+		void THUMB_ConditionalBranch();
+
 		//Helper functions
 		void setFlagsLogical(uint32_t result, int carryOut);
 		void setFlagsArithmetic(uint32_t op1, uint32_t op2, uint32_t result, bool addition);

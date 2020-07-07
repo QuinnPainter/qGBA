@@ -213,7 +213,7 @@ void arm7tdmi::step()
 				}
 				else
 				{
-					logging::error("Unimplemented THUMB instruction: Move Shifted Register: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					THUMB_MoveShiftedRegister();
 				}
 				break;
 			}
@@ -235,7 +235,7 @@ void arm7tdmi::step()
 				}
 				else if ((checkBits & 0b110) == 0b010)
 				{
-					logging::error("Unimplemented THUMB instruction: PC Relative Load: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					THUMB_LoadPCRelative();
 				}
 				else if ((checkBits & 0b100) == 0b100)
 				{
@@ -296,7 +296,7 @@ void arm7tdmi::step()
 					}
 					else
 					{
-						logging::error("Unimplemented THUMB instruction: Conditional Branch: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+						THUMB_ConditionalBranch();
 					}
 				}
 				else
@@ -756,6 +756,129 @@ void arm7tdmi::ARM_SingleDataTransfer()
 		setReg(baseAddrReg, addr);
 	}
 }
+
+// Thumb instructions
+
+void arm7tdmi::THUMB_MoveShiftedRegister()
+{
+	logging::info("Thumb Move Shifted Register", "arm7tdmi");
+	uint8_t dest_reg = (Pipeline.executeInstr & 0x7);
+	uint8_t src_reg = ((Pipeline.executeInstr >> 3) & 0x7);
+	uint8_t offset = ((Pipeline.executeInstr >> 6) & 0x1F);
+	uint8_t op = ((Pipeline.executeInstr >> 11) & 0x3);
+
+	uint32_t result = getReg(src_reg);
+	uint8_t shiftOut = 0;
+
+	switch (op)
+	{
+		case 0x0: //LSL
+			shiftOut = logicalShiftLeft(&result, offset);
+			break;
+		case 0x1: //LSR
+			shiftOut = logicalShiftRight(&result, offset);
+			break;
+		case 0x2: //ASR
+			shiftOut = arithmeticShiftRight(&result, offset);
+			break;
+		default: logging::error("Invalid shift in THUMB_MoveShiftedRegister", "arm7tdmi"); break;
+	}
+
+	setReg(dest_reg, result);
+	setFlagsLogical(result, shiftOut);
+}
+
+void arm7tdmi::THUMB_LoadPCRelative()
+{
+	logging::info("Thumb Load PC Relative", "arm7tdmi");
+	uint16_t offset = (Pipeline.executeInstr & 0xFF) * 4;
+	uint8_t dest_reg = ((Pipeline.executeInstr >> 8) & 0x7);
+
+	uint32_t load_addr = (state.R[15] & ~0x2) + offset;
+
+	uint32_t value = Memory->get32(load_addr);
+	setReg(dest_reg, value);
+}
+
+void arm7tdmi::THUMB_ConditionalBranch()
+{
+	logging::info("Thumb Conditional Branch", "arm7tdmi");
+	uint8_t offset = (Pipeline.executeInstr & 0xFF);
+	uint8_t op = ((Pipeline.executeInstr >> 8) & 0xF);
+
+	int16_t jump_addr = 0;
+
+	jump_addr = helpers::signExtend((uint16_t)offset, 8) << 1;
+	/*if (offset & 0x80)
+	{
+		offset--;
+		offset = ~offset;
+
+		jump_addr = (offset * -2);
+	}
+	else { jump_addr = ((uint16_t)offset << 1); }*/
+	bool doBranch = false;
+
+	//Jump based on condition codes
+	switch (op)
+	{
+		case 0x0: //BEQ
+			doBranch = state.CPSR & Zflag;
+			break;
+		case 0x1: //BNE
+			doBranch = (state.CPSR & Zflag) == 0;
+			break;
+		case 0x2: //BCS
+			doBranch = state.CPSR & Cflag;
+			break;
+		case 0x3: //BCC
+			doBranch = (state.CPSR & Cflag) == 0;
+			break;
+		case 0x4: //BMI
+			doBranch = state.CPSR & Nflag;
+			break;
+		case 0x5: //BPL
+			doBranch = (state.CPSR & Nflag) == 0;
+			break;
+		case 0x6: //BVS
+			doBranch = state.CPSR & Vflag;
+			break;
+		case 0x7: //BVC
+			doBranch = (state.CPSR & Vflag) == 0;
+			break;
+		case 0x8: //BHI
+			doBranch = (state.CPSR & Cflag) && ((state.CPSR & Zflag) == 0);
+			break;
+		case 0x9: //BLS
+			doBranch = (state.CPSR & Zflag) || ((state.CPSR & Cflag) == 0);
+			break;
+		case 0xA: //BGE
+			doBranch = ((bool)(state.CPSR & Nflag) == (bool)(state.CPSR & Vflag));
+			break;
+		case 0xB: //BLT
+			doBranch = ((bool)(state.CPSR & Nflag) != (bool)(state.CPSR & Vflag));
+			break;
+		case 0xC: //BGT
+			doBranch = (((state.CPSR & Zflag) == 0) && ((bool)(state.CPSR & Nflag) == (bool)(state.CPSR & Vflag)));
+			break;
+		case 0xD: //BLE
+			doBranch = (((state.CPSR & Zflag) != 0) && ((bool)(state.CPSR & Nflag) != (bool)(state.CPSR & Vflag)));
+			break;
+		case 0xE: //Undefined
+			logging::error("Undefined condition 0xE in THUMB_ConditionalBranch", "arm7tdmi");
+			break;
+		case 0xF: //SWI
+			logging::error("SWI in THUMB_ConditionalBranch. Shouldn't be possible. Check instruction decoding.", "arm7tdmi");
+			break;
+	}
+
+	if (doBranch)
+	{
+		setReg(15, getReg(15) + jump_addr);
+	}
+}
+
+// Helper functions
 
 void arm7tdmi::setFlagsLogical(uint32_t result, int carryOut)
 {
