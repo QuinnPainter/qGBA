@@ -2,6 +2,40 @@
 #include <cstdint>
 #include "memory.hpp"
 
+enum class instruction
+{
+	UNDEFINED,
+	PIPELINE_FILL,
+	ARM_3, // No 1 and 2 (numbers are based off of chapter nums in ARM Manual)
+	ARM_4,
+	ARM_5, // PSR Transfer (6) is called as part of Data Processing (5)
+	ARM_7, // Multiply (7) and Multiply Long (8) are combined.
+	ARM_9,
+	ARM_10,
+	ARM_11,
+	ARM_12,
+	ARM_13,
+	THUMB_1,
+	THUMB_2,
+	THUMB_3,
+	THUMB_4,
+	THUMB_5,
+	THUMB_6,
+	THUMB_7,
+	THUMB_8,
+	THUMB_9,
+	THUMB_10,
+	THUMB_11,
+	THUMB_12,
+	THUMB_13,
+	THUMB_14,
+	THUMB_15,
+	THUMB_16,
+	THUMB_17,
+	THUMB_18,
+	THUMB_19
+};
+
 struct cpuState
 {
 	uint32_t R[16];
@@ -16,10 +50,10 @@ struct cpuState
 
 struct pipeline
 {
-	uint32_t fetchInstr = 0;
-	uint32_t decodeInstr = 0;
-	uint32_t executeInstr = 0;
-	bool valid = false;
+	uint32_t instrPipeline[3];
+	instruction instrOperation[3];
+	uint8_t pipelinePtr;
+	bool pendingFlush;
 };
 
 class arm7tdmi
@@ -36,24 +70,28 @@ class arm7tdmi
 		void setReg(int index, uint32_t value);
 		uint32_t getSPSR();
 		void setSPSR(uint32_t value);
+		void fetch();
+		void decode();
+		void execute();
+		void flushPipeline();
 
 		//ARM instructions
-		void ARM_Branch();
-		void ARM_BranchExchange();
-		void ARM_DataProcessing();
-		void ARM_PSRTransfer();
-		void ARM_SingleDataTransfer();
+		void ARM_BranchExchange(uint32_t currentInstruction);
+		void ARM_Branch(uint32_t currentInstruction);
+		void ARM_DataProcessing(uint32_t currentInstruction);
+		void ARM_PSRTransfer(uint32_t currentInstruction);
+		void ARM_SingleDataTransfer(uint32_t currentInstruction);
 
 		//THUMB instructions
-		void THUMB_MoveShiftedRegister();
-		void THUMB_AddSubtract();
-		void THUMB_MvCmpAddSubImmediate();
-		void THUMB_ALUOps();
-		void THUMB_HiRegOps_BranchExchange();
-		void THUMB_LoadPCRelative();
-		void THUMB_MultipleLoadStore();
-		void THUMB_ConditionalBranch();
-		void THUMB_LongBranchLink();
+		void THUMB_MoveShiftedRegister(uint16_t currentInstruction);
+		void THUMB_AddSubtract(uint16_t currentInstruction);
+		void THUMB_MvCmpAddSubImmediate(uint16_t currentInstruction);
+		void THUMB_ALUOps(uint16_t currentInstruction);
+		void THUMB_HiRegOps_BranchExchange(uint16_t currentInstruction);
+		void THUMB_LoadPCRelative(uint16_t currentInstruction);
+		void THUMB_MultipleLoadStore(uint16_t currentInstruction);
+		void THUMB_ConditionalBranch(uint16_t currentInstruction);
+		void THUMB_LongBranchLink(uint16_t currentInstruction);
 
 		//Helper functions
 		void setFlagsLogical(uint32_t result, int carryOut);
@@ -62,4 +100,5 @@ class arm7tdmi
 		bool logicalShiftRight(uint32_t* value, int shiftAmount);
 		bool arithmeticShiftRight(uint32_t* value, int shiftAmount);
 		bool rotateRight(uint32_t* value, int shiftAmount);
+		void rotateRightSpecial(uint32_t* value, int shiftAmount);
 };

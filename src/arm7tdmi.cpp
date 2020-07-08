@@ -40,6 +40,7 @@ arm7tdmi::arm7tdmi(memory* mem, bool bios)
 			0, //SPSR_irq
 		};
 	}
+	flushPipeline();
 }
 
 bool arm7tdmi::checkCondCode(uint32_t instr)
@@ -135,7 +136,7 @@ void arm7tdmi::setReg(int index, uint32_t value)
 		state.R[index] = value;
 		if (index == 15)
 		{
-			Pipeline.valid = false;
+			Pipeline.pendingFlush = true;
 		}
 	}
 }
@@ -162,164 +163,160 @@ void arm7tdmi::setSPSR(uint32_t value)
 
 void arm7tdmi::step()
 {
-	if (Pipeline.valid)
+	fetch();
+	decode();
+	execute();
+
+	if (Pipeline.pendingFlush)
 	{
-		//Progress the pipeline
-		if (state.CPSR & 0x20)
-		{
-			//THUMB
-			state.R[15] += 2;
-			Pipeline.executeInstr = Pipeline.decodeInstr;
-			Pipeline.decodeInstr = Pipeline.fetchInstr;
-			Pipeline.fetchInstr = Memory->get16(state.R[15]);
-		}
-		else
-		{
-			//ARM
-			state.R[15] += 4;
-			Pipeline.executeInstr = Pipeline.decodeInstr;
-			Pipeline.decodeInstr = Pipeline.fetchInstr;
-			Pipeline.fetchInstr = Memory->get32(state.R[15]);
-		}
+		flushPipeline();
 	}
 	else
 	{
-		//Rebuild the pipeline
-		if (state.CPSR & 0x20)
-		{
-			//THUMB
-			Pipeline.executeInstr = Memory->get16(state.R[15]);
-			Pipeline.decodeInstr = Memory->get16(state.R[15] + 2);
-			Pipeline.fetchInstr = Memory->get16(state.R[15] + 4);
-			state.R[15] += 4;
-		}
-		else
-		{
-			//ARM
-			Pipeline.executeInstr = Memory->get32(state.R[15]);
-			Pipeline.decodeInstr = Memory->get32(state.R[15] + 4);
-			Pipeline.fetchInstr = Memory->get32(state.R[15] + 8);
-			state.R[15] += 8;
-		}
-		Pipeline.valid = true;
+		Pipeline.pipelinePtr = (Pipeline.pipelinePtr + 1) % 3;
+		state.R[15] += (state.CPSR & 0x20) ? 2 : 4;
 	}
+	//logging::info(helpers::intToHex(getReg(15)) + " " + helpers::intToHex(currentInstr));
+}
 
-	logging::info(helpers::intToHex(getReg(15)) + " " + helpers::intToHex(Pipeline.executeInstr));
+void arm7tdmi::fetch()
+{
+	if (state.CPSR & 0x20)
+	{
+		//THUMB
+		Pipeline.instrPipeline[Pipeline.pipelinePtr] = Memory->get16(state.R[15]);
+		Pipeline.instrOperation[Pipeline.pipelinePtr] = instruction::UNDEFINED;
+	}
+	else
+	{
+		//ARM
+		Pipeline.instrPipeline[Pipeline.pipelinePtr] = Memory->get32(state.R[15]);
+		Pipeline.instrOperation[Pipeline.pipelinePtr] = instruction::UNDEFINED;
+	}
+}
+
+void arm7tdmi::decode()
+{
+	uint8_t pipelineIndex = (Pipeline.pipelinePtr + 2) % 3;
+	if (Pipeline.instrOperation[pipelineIndex] == instruction::PIPELINE_FILL) { return; }
+	// if it doesn't match any criteria, leave undefined
+	Pipeline.instrOperation[pipelineIndex] = instruction::UNDEFINED;
 
 	if (state.CPSR & 0x20)
 	{
 		//THUMB
-		switch ((Pipeline.executeInstr >> 13) & 0b111)
+		uint16_t currentInstr = Pipeline.instrPipeline[pipelineIndex];
+		switch ((currentInstr >> 13) & 0b111)
 		{
 			case 0b000:
 			{
-				if ((Pipeline.executeInstr & 0x1800) == 0x1800)
+				if ((currentInstr & 0x1800) == 0x1800)
 				{
-					THUMB_AddSubtract();
+					Pipeline.instrOperation[pipelineIndex] = instruction::THUMB_2;
 				}
 				else
 				{
-					THUMB_MoveShiftedRegister();
+					Pipeline.instrOperation[pipelineIndex] = instruction::THUMB_1;
 				}
 				break;
 			}
 			case 0b001:
 			{
-				THUMB_MvCmpAddSubImmediate();
+				Pipeline.instrOperation[pipelineIndex] = instruction::THUMB_3;
 				break;
 			}
 			case 0b010:
 			{
-				uint8_t checkBits = (Pipeline.executeInstr >> 10) & 0b111;
+				uint8_t checkBits = (currentInstr >> 10) & 0b111;
 				if (checkBits == 0b000)
 				{
-					THUMB_ALUOps();
+					Pipeline.instrOperation[pipelineIndex] = instruction::THUMB_4;
 				}
 				else if (checkBits == 0b001)
 				{
-					THUMB_HiRegOps_BranchExchange();
+					Pipeline.instrOperation[pipelineIndex] = instruction::THUMB_5;
 				}
 				else if ((checkBits & 0b110) == 0b010)
 				{
-					THUMB_LoadPCRelative();
+					Pipeline.instrOperation[pipelineIndex] = instruction::THUMB_6;
 				}
 				else if ((checkBits & 0b100) == 0b100)
 				{
-					if (Pipeline.executeInstr & 0x200)
+					if (currentInstr & 0x200)
 					{
-						logging::error("Unimplemented THUMB instruction: Load/Store Sign-Extended: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+						Pipeline.instrOperation[pipelineIndex] = instruction::THUMB_8;
 					}
 					else
 					{
-						logging::error("Unimplemented THUMB instruction: Load/Store Reg Offset: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+						Pipeline.instrOperation[pipelineIndex] = instruction::THUMB_7;
 					}
 				}
 				break;
 			}
 			case 0b011:
 			{
-				logging::error("Unimplemented THUMB instruction: Load/Store Immediate Offset: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+				Pipeline.instrOperation[pipelineIndex] = instruction::THUMB_9;
 				break;
 			}
 			case 0b100:
 			{
-				if (Pipeline.executeInstr & 0x1000)
+				if (currentInstr & 0x1000)
 				{
-					logging::error("Unimplemented THUMB instruction: SP Relative Load/Store: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					Pipeline.instrOperation[pipelineIndex] = instruction::THUMB_11;
 				}
 				else
 				{
-					logging::error("Unimplemented THUMB instruction: Load/Store Halfword: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					Pipeline.instrOperation[pipelineIndex] = instruction::THUMB_10;
 				}
 				break;
 			}
 			case 0b101:
 			{
-				if (Pipeline.executeInstr & 0x1000)
+				if (currentInstr & 0x1000)
 				{
-					if (Pipeline.executeInstr & 0x400)
+					if (currentInstr & 0x400)
 					{
-						logging::error("Unimplemented THUMB instruction: Push/Pop Registers: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+						Pipeline.instrOperation[pipelineIndex] = instruction::THUMB_14;
 					}
 					else
 					{
-						logging::error("Unimplemented THUMB instruction: Add Offset to SP: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+						Pipeline.instrOperation[pipelineIndex] = instruction::THUMB_13;
 					}
 				}
 				else
 				{
-					logging::error("Unimplemented THUMB instruction: Load Address: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					Pipeline.instrOperation[pipelineIndex] = instruction::THUMB_12;
 				}
 				break;
 			}
 			case 0b110:
 			{
-				if (Pipeline.executeInstr & 0x1000)
+				if (currentInstr & 0x1000)
 				{
-					if ((Pipeline.executeInstr & 0x0F00) == 0x0F00)
+					if ((currentInstr & 0x0F00) == 0x0F00)
 					{
-						logging::error("Unimplemented THUMB instruction: Software Interrupt: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+						Pipeline.instrOperation[pipelineIndex] = instruction::THUMB_17;
 					}
 					else
 					{
-						THUMB_ConditionalBranch();
+						Pipeline.instrOperation[pipelineIndex] = instruction::THUMB_16;
 					}
 				}
 				else
 				{
-					THUMB_MultipleLoadStore();
+					Pipeline.instrOperation[pipelineIndex] = instruction::THUMB_15;
 				}
 				break;
 			}
 			case 0b111:
 			{
-				if (Pipeline.executeInstr & 0x1000)
+				if (currentInstr & 0x1000)
 				{
-					THUMB_LongBranchLink();
+					Pipeline.instrOperation[pipelineIndex] = instruction::THUMB_19;
 				}
 				else
 				{
-					logging::error("Unimplemented THUMB instruction: Unconditional Branch: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					Pipeline.instrOperation[pipelineIndex] = instruction::THUMB_18;
 				}
 				break;
 			}
@@ -328,86 +325,64 @@ void arm7tdmi::step()
 	else
 	{
 		//ARM
-		if (checkCondCode(Pipeline.executeInstr))
+		uint32_t currentInstr = Pipeline.instrPipeline[pipelineIndex];
+		if (checkCondCode(currentInstr))
 		{
-			//logging::info("Execute instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
-			switch ((Pipeline.executeInstr >> 26) & 0b11)
+			switch ((currentInstr >> 26) & 0b11)
 			{
 				case 0b00:
 				{
-					if ((Pipeline.executeInstr & 0x12FFF10) == 0x12FFF10)
+					if ((currentInstr & 0x12FFF10) == 0x12FFF10)
 					{
-						ARM_BranchExchange();
+						Pipeline.instrOperation[pipelineIndex] = instruction::ARM_3;
 					}
-					else if ((Pipeline.executeInstr & 0x2000000) == 0x2000000 || (Pipeline.executeInstr & 0x80) != 0x80)
+					else if ((currentInstr & 0x2000000) == 0x2000000 || (currentInstr & 0x80) != 0x80)
 					{
-						ARM_DataProcessing();
+						Pipeline.instrOperation[pipelineIndex] = instruction::ARM_5;
 					}
-					else if ((Pipeline.executeInstr & 0x60) == 0)
+					else if ((currentInstr & 0x60) == 0)
 					{
-						switch ((Pipeline.executeInstr >> 23) & 0b11)
+						if ((currentInstr >> 24) & 1)
 						{
-							case 0b00:
-								logging::error("Unimplemented instruction: Multiply: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
-								break;
-							case 0b01:
-								logging::error("Unimplemented instruction: Multiply Long: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
-								break;
-							case 0b10:
-								logging::error("Unimplemented instruction: Single Data Swap: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
-								break;
-							case 0b11:
-								//The datasheet doesn't say what this should be.
-								logging::error("Undefined instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
-								break;
+							Pipeline.instrOperation[pipelineIndex] = instruction::ARM_12;
+						}
+						else
+						{
+							Pipeline.instrOperation[pipelineIndex] = instruction::ARM_7;
 						}
 					}
 					else
 					{
-						if (Pipeline.executeInstr & 0x400000)
-						{
-							logging::error("Unimplemented instruction: HalfwordDataTransfer(ImmOffset): " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
-						}
-						else
-						{
-							logging::error("Unimplemented instruction: HalfwordDataTransfer(RegOffset): " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
-						}
+						Pipeline.instrOperation[pipelineIndex] = instruction::ARM_10;
 					}
 					break;
 				}
 				case 0b01:
 				{
-					if ((Pipeline.executeInstr & 0x2000010) == 0x2000010)
-					{
-						logging::error("Undefined instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
-					}
-					else
-					{
-						ARM_SingleDataTransfer();
-					}
+					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_9;
 					break;
 				}
 				case 0b10:
 				{
-					if ((Pipeline.executeInstr >> 25) & 1)
+					if ((currentInstr >> 25) & 1)
 					{
-						ARM_Branch();
+						Pipeline.instrOperation[pipelineIndex] = instruction::ARM_4;
 					}
 					else
 					{
-						logging::error("Unimplemented instruction: Block Data Transfer: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+						Pipeline.instrOperation[pipelineIndex] = instruction::ARM_11;
 					}
 					break;
 				}
 				case 0b11:
 				{
-					if (((Pipeline.executeInstr >> 24) & 0xF) == 0xF)
+					if (((currentInstr >> 24) & 0xF) == 0xF)
 					{
-						logging::error("Unimplemented instruction: Software Interrupt: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+						Pipeline.instrOperation[pipelineIndex] = instruction::ARM_13;
 					}
 					else
 					{
-						logging::error("Undefined coprocessor instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+						// Coprocessor instruction.
 					}
 					break;
 				}
@@ -416,12 +391,96 @@ void arm7tdmi::step()
 	}
 }
 
+void arm7tdmi::execute()
+{
+	uint8_t pipelineIndex = (Pipeline.pipelinePtr + 1) % 3;
+	if (Pipeline.instrOperation[pipelineIndex] == instruction::PIPELINE_FILL) { return; }
+
+	if (state.CPSR & 0x20)
+	{
+		//THUMB
+		uint16_t currentInstruction = Pipeline.instrPipeline[pipelineIndex];
+		switch (Pipeline.instrOperation[pipelineIndex])
+		{
+			case instruction::THUMB_1: THUMB_MoveShiftedRegister(currentInstruction); break;
+			case instruction::THUMB_2: THUMB_AddSubtract(currentInstruction); break;
+			case instruction::THUMB_3: THUMB_MvCmpAddSubImmediate(currentInstruction); break;
+			case instruction::THUMB_4: THUMB_ALUOps(currentInstruction); break;
+			case instruction::THUMB_5: THUMB_HiRegOps_BranchExchange(currentInstruction); break;
+			case instruction::THUMB_6: THUMB_LoadPCRelative(currentInstruction); break;
+			case instruction::THUMB_7: logging::error("Unimplemented THUMB instruction: Load/Store Reg Offset: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+			case instruction::THUMB_8: logging::error("Unimplemented THUMB instruction: Load/Store Sign-Extended: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+			case instruction::THUMB_9: logging::error("Unimplemented THUMB instruction: Load/Store Immediate Offset: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+			case instruction::THUMB_10: logging::error("Unimplemented THUMB instruction: Load/Store Halfword: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+			case instruction::THUMB_11: logging::error("Unimplemented THUMB instruction: SP Relative Load/Store: " + helpers::intToHex(currentInstruction), "arm7tdmi"); (currentInstruction); break;
+			case instruction::THUMB_12: logging::error("Unimplemented THUMB instruction: Load Address: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+			case instruction::THUMB_13: logging::error("Unimplemented THUMB instruction: Add Offset to SP: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+			case instruction::THUMB_14: logging::error("Unimplemented THUMB instruction: Push/Pop Registers: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+			case instruction::THUMB_15: THUMB_MultipleLoadStore(currentInstruction); break;
+			case instruction::THUMB_16: THUMB_ConditionalBranch(currentInstruction); break;
+			case instruction::THUMB_17: logging::error("Unimplemented THUMB instruction: Software Interrupt: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+			case instruction::THUMB_18: logging::error("Unimplemented THUMB instruction: Unconditional Branch: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+			case instruction::THUMB_19: THUMB_LongBranchLink(currentInstruction); break;
+			default: logging::fatal("Invalid instruction in THUMB pipeline", "arm7tdmi"); break;
+		}
+	}
+	else
+	{
+		//ARM
+		uint32_t currentInstruction = Pipeline.instrPipeline[pipelineIndex];
+		if (checkCondCode(currentInstruction))
+		{
+			switch (Pipeline.instrOperation[pipelineIndex])
+			{
+				case instruction::ARM_3: ARM_BranchExchange(currentInstruction); break;
+				case instruction::ARM_4: ARM_Branch(currentInstruction); break;
+				case instruction::ARM_5: ARM_DataProcessing(currentInstruction); break;
+				case instruction::ARM_7: logging::error("Unimplemented ARM instruction: Multiply: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+				case instruction::ARM_9: ARM_SingleDataTransfer(currentInstruction); break;
+				case instruction::ARM_10: logging::error("Unimplemented instruction: Halfword Data Transfer: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+				case instruction::ARM_11: logging::error("Unimplemented instruction: Block Data Transfer: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+				case instruction::ARM_12: logging::error("Unimplemented instruction: Single Data Swap: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+				case instruction::ARM_13: logging::error("Unimplemented instruction: Software Interrupt: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+				default: logging::fatal("Invalid instruction in ARM pipeline", "arm7tdmi"); break;
+			}
+		}
+	}
+}
+
+void arm7tdmi::flushPipeline()
+{
+	Pipeline.pendingFlush = false;
+	Pipeline.pipelinePtr = 0;
+	Pipeline.instrPipeline[0] = 0;
+	Pipeline.instrPipeline[1] = 0;
+	Pipeline.instrPipeline[2] = 0;
+	Pipeline.instrOperation[0] = instruction::PIPELINE_FILL;
+	Pipeline.instrOperation[1] = instruction::PIPELINE_FILL;
+	Pipeline.instrOperation[2] = instruction::PIPELINE_FILL;
+}
+
 // ARM Instructions
 
-void arm7tdmi::ARM_Branch()
+void arm7tdmi::ARM_BranchExchange(uint32_t currentInstruction)
 {
-	int32_t offset = helpers::signExtend(Pipeline.executeInstr & 0xFFFFFF, 24) << 2;
-	if (Pipeline.executeInstr & 0x1000000)
+	uint32_t addr = getReg(currentInstruction & 0xF);
+	setReg(15, addr & (~0x1));
+	if (addr & 0x1)
+	{
+		state.CPSR |= 0x20;
+		logging::info("Switched to THUMB", "arm7tdmi");
+	}
+	else
+	{
+		logging::info("Continue in ARM", "arm7tdmi");
+	}
+	logging::info("Branched and exchanged to " + helpers::intToHex(getReg(15)), "arm7tdmi");
+}
+
+void arm7tdmi::ARM_Branch(uint32_t currentInstruction)
+{
+	int32_t offset = helpers::signExtend((currentInstruction & 0xFFFFFF) << 2, 24);
+	if (currentInstruction & 0x1000000)
 	{
 		//Branch with Link
 		setReg(14, getReg(15) - 4);
@@ -436,74 +495,59 @@ void arm7tdmi::ARM_Branch()
 	}
 }
 
-void arm7tdmi::ARM_BranchExchange()
+void arm7tdmi::ARM_DataProcessing(uint32_t currentInstruction)
 {
-	uint32_t addr = state.R[(Pipeline.executeInstr & 0xF)];
-	setReg(15, addr & (~0x1));
-	if (addr & 0x1)
-	{
-		state.CPSR |= 0x20;
-		logging::info("Switched to THUMB", "arm7tdmi");
-	}
-	else
-	{
-		logging::info("Continue in ARM", "arm7tdmi");
-	}
-	logging::info("Branched and exchanged to " + helpers::intToHex(getReg(15)), "arm7tdmi");
-}
-
-void arm7tdmi::ARM_DataProcessing()
-{
-	bool setFlag = Pipeline.executeInstr & 0x100000;
-	uint8_t opcode = (Pipeline.executeInstr >> 21) & 0xF;
-	uint32_t operand1 = getReg((Pipeline.executeInstr >> 16) & 0xF);
-	uint8_t destReg = (Pipeline.executeInstr >> 12) & 0xF;
+	bool setFlag = currentInstruction & 0x100000;
+	uint8_t opcode = (currentInstruction >> 21) & 0xF;
+	uint8_t srcReg = (currentInstruction >> 16) & 0xF;
+	uint32_t operand1 = getReg(srcReg);
+	uint8_t destReg = (currentInstruction >> 12) & 0xF;
 	uint32_t operand2;
 	if (!setFlag && (opcode >> 2) == 0b10)
 	{
-		ARM_PSRTransfer();
+		ARM_PSRTransfer(currentInstruction);
 		return;
 	}
+	bool shiftImmediate = !((bool)(currentInstruction & 0x10));
 	logging::info("Data Processing on R" + std::to_string(destReg), "arm7tdmi");
 
 	int shiftCarryOut = 2;
-	if (Pipeline.executeInstr & 0x2000000)
+	if (currentInstruction & 0x2000000)
 	{
 		//Immediate Value
-		uint32_t value = Pipeline.executeInstr & 0xFF;
-		uint8_t shift = ((Pipeline.executeInstr >> 8) & 0xF) * 2;
-		//ROR
-		for (int i = 0; i < shift; i++)
-		{
-			uint32_t carry = value & 1;
-			value >>= 1;
-			value |= carry << 31;
-		}
+		uint32_t value = currentInstruction & 0xFF;
+		uint8_t shift = (currentInstruction >> 8) & 0xF;
+
+		rotateRightSpecial(&value, shift);
 		operand2 = value;
 	}
 	else
 	{
 		//Register
-		operand2 = getReg(Pipeline.executeInstr & 0xF);
-		uint8_t shiftInfo = (Pipeline.executeInstr >> 4) & 0xFF;
+		operand2 = getReg(currentInstruction & 0xF);
+		uint8_t shiftInfo = (currentInstruction >> 5) & 0x3;
 
 		uint8_t shiftAmount;
-		if (shiftInfo & 1)
+		if (shiftImmediate)
 		{
-			if ((shiftInfo >> 4) == 15)
-			{
-				logging::error("DataProcessing: Shift amount can't be PC", "arm7tdmi");
-			}
-			shiftAmount = getReg(shiftInfo >> 4) & 0xFF;
+			shiftAmount = (currentInstruction >> 7) & 0x1F;
 		}
 		else
 		{
-			shiftAmount = shiftInfo >> 3;
+			if (((currentInstruction >> 8) & 0xF) == 15)
+			{
+				logging::error("ARM_DataProcessing: Shift amount can't be PC", "arm7tdmi");
+			}
+
+			if (srcReg == 15) { operand1 += 4; }
+			if ((currentInstruction & 0xF) == 15) { operand2 += 4; }
+
+			shiftAmount = getReg((currentInstruction >> 8) & 0xF);
 		}
 
-		if (!((shiftInfo & 1) && shiftAmount == 0))
+		if (!(!shiftImmediate && shiftAmount == 0))
 		{
-			switch ((shiftInfo >> 1) & 0b11)
+			switch (shiftInfo)
 			{
 				case 0b00: shiftCarryOut = logicalShiftLeft(&operand2, shiftAmount); break;
 				case 0b01: shiftCarryOut = logicalShiftRight(&operand2, shiftAmount); break;
@@ -511,6 +555,12 @@ void arm7tdmi::ARM_DataProcessing()
 				case 0b11: shiftCarryOut = rotateRight(&operand2, shiftAmount); break;
 			}
 		}
+	}
+
+	if (setFlag && (destReg == 15))
+	{
+		state.CPSR = getSPSR();
+		setFlag = false;
 	}
 
 	uint32_t result;
@@ -594,134 +644,118 @@ void arm7tdmi::ARM_DataProcessing()
 			break;
 	}
 
-	if (setFlag && (destReg == 15))
+	if (destReg == 15)
 	{
-		state.CPSR = getSPSR();
+		if (state.R[15] & 0x1)
+		{
+			state.CPSR |= 0x20;
+			setReg(15, getReg(15) & ~0x1);
+		}
+		else
+		{
+			setReg(15, getReg(15) & ~0x3);
+		}
 	}
 }
 
-void arm7tdmi::ARM_PSRTransfer()
+void arm7tdmi::ARM_PSRTransfer(uint32_t currentInstruction)
 {
 	logging::info("PSR transfer", "arm7tdmi");
-	bool PSR = Pipeline.executeInstr & 0x400000; //0 = CPSR  1 = SPSR
+	bool PSR = currentInstruction & 0x400000; //0 = CPSR  1 = SPSR
+	bool immediate = currentInstruction & 0x2000000;
+	bool opcode = currentInstruction & 0x200000;
 
-	switch ((Pipeline.executeInstr >> 16) & 0x3F)
+	if (opcode) // MSR
 	{
-		case 0b001111: // MRS (transfer PSR to register)
+		uint32_t input = 0;
+		uint32_t fieldMask = 0;
+		if (currentInstruction & 0x80000) { fieldMask |= 0xFF000000; }
+		if (currentInstruction & 0x40000) { fieldMask |= 0x00FF0000; }
+		if (currentInstruction & 0x20000) { fieldMask |= 0x0000FF00; }
+		if (currentInstruction & 0x10000) { fieldMask |= 0x000000FF; }
+
+		if (immediate)
 		{
-			uint8_t destReg = (Pipeline.executeInstr >> 12) & 0xF;
-			if (destReg == 15)
-			{
-				logging::error("MRS destination register can't be R15", "arm7tdmi");
-				break;
-			}
-			if (PSR)
-			{
-				setReg(destReg, getSPSR());
-			}
-			else
-			{
-				setReg(destReg, state.CPSR);
-			}
-			break;
+			input = currentInstruction & 0xFF;
+			uint8_t shift = (currentInstruction >> 8) & 0xF;
+			rotateRightSpecial(&input, shift);
 		}
-		case 0b101001: // MSR (transfer register to PSR)
+		else
 		{
-			uint8_t srcReg = Pipeline.executeInstr & 0xF;
+			uint8_t srcReg = currentInstruction & 0xF;
 			if (srcReg == 15)
 			{
 				logging::error("MSR source register can't be R15", "arm7tdmi");
-				break;
 			}
-			if (PSR)
-			{
-				setSPSR(getReg(srcReg));
-			}
-			else
-			{
-				state.CPSR = srcReg; //TODO: handle mode changes here
-			}
-			break;
+			input = getReg(srcReg);
+			input &= fieldMask;
 		}
-		case 0b101000: // MSR (transfer value to PSR flag bits)
+
+		if (PSR)
 		{
-			uint32_t src;
-			if (Pipeline.executeInstr & 0x2000000)
-			{
-				// Source is register
-				uint8_t srcReg = Pipeline.executeInstr & 0xF;
-				if (srcReg == 15)
-				{
-					logging::error("MSR source register can't be R15", "arm7tdmi");
-					break;
-				}
-				src = getReg(srcReg);
-			}
-			else
-			{
-				// Source is immediate
-				uint32_t value = Pipeline.executeInstr & 0xFF;
-				uint8_t shift = ((Pipeline.executeInstr >> 8) & 0xF) * 2;
-				//ROR
-				for (int i = 0; i < shift; i++)
-				{
-					uint32_t carry = value & 1;
-					value >>= 1;
-					value |= carry << 31;
-				}
-				src = value;
-			}
-			if (PSR)
-			{
-				setSPSR((getSPSR() & 0xFFFFFFF) | (src & 0xF0000000));
-			}
-			else
-			{
-				state.CPSR = ((state.CPSR & 0xFFFFFFF) | (src & 0xF0000000));
-			}
-			break;
+			uint32_t temp = getSPSR();
+			temp &= ~fieldMask;
+			temp |= input;
+			setSPSR(temp);
 		}
-		default:
+		else
 		{
-			logging::error("Invalid PSR instruction: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
-			break;
+			state.CPSR &= ~fieldMask;
+			state.CPSR |= input;
+			if (state.CPSR & 0x20)
+			{
+				// Switch to THUMB
+				setReg(15, getReg(15) & ~0x1); // also flushes pipeline
+			}
+		}
+	}
+	else // MRS (transfer PSR to register)
+	{
+		uint8_t destReg = (currentInstruction >> 12) & 0xF;
+		if (destReg == 15)
+		{
+			logging::error("MRS destination register can't be R15", "arm7tdmi");
+		}
+		if (PSR)
+		{
+			setReg(destReg, getSPSR());
+		}
+		else
+		{
+			setReg(destReg, state.CPSR);
 		}
 	}
 }
 
-void arm7tdmi::ARM_SingleDataTransfer()
+void arm7tdmi::ARM_SingleDataTransfer(uint32_t currentInstruction)
 {
 	logging::info("Single Data Transfer", "arm7tdmi");
-	bool offsetImmediate = Pipeline.executeInstr & 0x2000000;
-	bool preIndexing = Pipeline.executeInstr & 0x1000000;
-	bool offsetUp = Pipeline.executeInstr & 0x800000;
-	bool byteOrWord = Pipeline.executeInstr & 0x400000;
-	bool writeback = Pipeline.executeInstr & 0x200000;
-	bool loadOrStore = Pipeline.executeInstr & 0x100000;
-	uint8_t baseAddrReg = (Pipeline.executeInstr >> 16) & 0xF;
-	uint8_t srcReg = (Pipeline.executeInstr >> 12) & 0xF;
+	bool offsetImmediate = currentInstruction & 0x2000000;
+	bool preIndexing = currentInstruction & 0x1000000;
+	bool offsetUp = currentInstruction & 0x800000;
+	bool byteOrWord = currentInstruction & 0x400000;
+	bool writeback = currentInstruction & 0x200000;
+	bool loadOrStore = currentInstruction & 0x100000;
+	uint8_t baseAddrReg = (currentInstruction >> 16) & 0xF;
+	uint8_t srcReg = (currentInstruction >> 12) & 0xF;
 	uint32_t offset;
 
 	if (offsetImmediate == false)
 	{
-		offset = Pipeline.executeInstr & 0xFFF;
+		offset = currentInstruction & 0xFFF;
 	}
 	else
 	{
-		offset = getReg(Pipeline.executeInstr & 0xF);
-		uint8_t shiftInfo = (Pipeline.executeInstr >> 4) & 0xFF;
+		offset = getReg(currentInstruction & 0xF);
+		uint8_t shiftType = ((currentInstruction >> 5) & 0x3);
+		uint8_t shiftOffset = ((currentInstruction >> 7) & 0x1F);
 
-		uint8_t shiftAmount = shiftInfo >> 3;
-
-		if (!((shiftInfo & 1) && shiftAmount == 0))
+		switch (shiftType)
 		{
-			switch ((shiftInfo >> 1) & 0b11)
-			{
-				case 0b00: logicalShiftLeft(&offset, shiftAmount); break;
-				case 0b01: logicalShiftRight(&offset, shiftAmount); break;
-				case 0b10: arithmeticShiftRight(&offset, shiftAmount); break;
-				case 0b11: rotateRight(&offset, shiftAmount); break;
-			}
+			case 0b00: logicalShiftLeft(&offset, shiftOffset); break;
+			case 0b01: logicalShiftRight(&offset, shiftOffset); break;
+			case 0b10: arithmeticShiftRight(&offset, shiftOffset); break;
+			case 0b11: rotateRight(&offset, shiftOffset); break;
 		}
 	}
 
@@ -745,19 +779,21 @@ void arm7tdmi::ARM_SingleDataTransfer()
 	else
 	{
 		// Store
+		uint32_t value = getReg(srcReg);
+		if (srcReg == 15) { value += 4; }
 		if (byteOrWord)
 		{
-			Memory->set8(addr, getReg(srcReg) & 0xFF);
+			Memory->set8(addr, value & 0xFF);
 		}
 		else
 		{
-			Memory->set32(addr, getReg(srcReg));
+			Memory->set32(addr, value);
 		}
 	}
 
 	if (!preIndexing) { addr += offset; }
 
-	if ((!preIndexing) || (preIndexing && writeback))
+	if (((!preIndexing) || (preIndexing && writeback)) && baseAddrReg != srcReg)
 	{
 		setReg(baseAddrReg, addr);
 	}
@@ -765,13 +801,13 @@ void arm7tdmi::ARM_SingleDataTransfer()
 
 // Thumb instructions
 
-void arm7tdmi::THUMB_MoveShiftedRegister()
+void arm7tdmi::THUMB_MoveShiftedRegister(uint16_t currentInstruction)
 {
 	logging::info("Thumb Move Shifted Register", "arm7tdmi");
-	uint8_t dest_reg = (Pipeline.executeInstr & 0x7);
-	uint8_t src_reg = ((Pipeline.executeInstr >> 3) & 0x7);
-	uint8_t offset = ((Pipeline.executeInstr >> 6) & 0x1F);
-	uint8_t op = ((Pipeline.executeInstr >> 11) & 0x3);
+	uint8_t dest_reg = (currentInstruction & 0x7);
+	uint8_t src_reg = ((currentInstruction >> 3) & 0x7);
+	uint8_t offset = ((currentInstruction >> 6) & 0x1F);
+	uint8_t op = ((currentInstruction >> 11) & 0x3);
 
 	uint32_t result = getReg(src_reg);
 	uint8_t shiftOut = 0;
@@ -794,17 +830,17 @@ void arm7tdmi::THUMB_MoveShiftedRegister()
 	setFlagsLogical(result, shiftOut);
 }
 
-void arm7tdmi::THUMB_AddSubtract()
+void arm7tdmi::THUMB_AddSubtract(uint16_t currentInstruction)
 {
 	logging::info("Thumb Add/Subtract", "arm7tdmi");
-	uint8_t dest_reg = (Pipeline.executeInstr & 0x7);
-	uint8_t src_reg = ((Pipeline.executeInstr >> 3) & 0x7);
-	uint8_t op = ((Pipeline.executeInstr >> 9) & 0x3);
+	uint8_t dest_reg = (currentInstruction & 0x7);
+	uint8_t src_reg = ((currentInstruction >> 3) & 0x7);
+	uint8_t op = ((currentInstruction >> 9) & 0x3);
 
 	uint32_t input = getReg(src_reg);
 	uint32_t result = 0;
 	uint32_t operand = 0;
-	uint8_t imm_reg = ((Pipeline.executeInstr >> 6) & 0x7);
+	uint8_t imm_reg = ((currentInstruction >> 6) & 0x7);
 
 	//Perform addition or subtraction
 	switch (op)
@@ -831,16 +867,16 @@ void arm7tdmi::THUMB_AddSubtract()
 	setFlagsArithmetic(input, operand, result, !((bool)(op & 0x1)));
 }
 
-void arm7tdmi::THUMB_MvCmpAddSubImmediate()
+void arm7tdmi::THUMB_MvCmpAddSubImmediate(uint16_t currentInstruction)
 {
 	logging::info("Thumb Mv/Cmp/Add/Sub Immediate", "arm7tdmi");
-	uint8_t dest_reg = ((Pipeline.executeInstr >> 8) & 0x7);
-	uint8_t op = ((Pipeline.executeInstr >> 11) & 0x3);
+	uint8_t dest_reg = ((currentInstruction >> 8) & 0x7);
+	uint8_t op = ((currentInstruction >> 11) & 0x3);
 
 	uint32_t input = getReg(dest_reg);
 	uint32_t result = 0;
 
-	uint32_t operand = (Pipeline.executeInstr & 0xFF);
+	uint32_t operand = (currentInstruction & 0xFF);
 
 	switch (op)
 	{
@@ -863,12 +899,12 @@ void arm7tdmi::THUMB_MvCmpAddSubImmediate()
 	if (op != 1) { setReg(dest_reg, result); }
 }
 
-void arm7tdmi::THUMB_ALUOps()
+void arm7tdmi::THUMB_ALUOps(uint16_t currentInstruction)
 {
 	logging::info("Thumb ALU Ops", "arm7tdmi");
-	uint8_t dest_reg = (Pipeline.executeInstr & 0x7);
-	uint8_t src_reg = ((Pipeline.executeInstr >> 3) & 0x7);
-	uint8_t op = ((Pipeline.executeInstr >> 6) & 0xF);
+	uint8_t dest_reg = (currentInstruction & 0x7);
+	uint8_t src_reg = ((currentInstruction >> 3) & 0x7);
+	uint8_t op = ((currentInstruction >> 6) & 0xF);
 
 	uint32_t input = getReg(dest_reg);
 	uint32_t result = 0;
@@ -915,14 +951,17 @@ void arm7tdmi::THUMB_ALUOps()
 			break;
 		case 0x5: //ADC
 			result = (input + operand + carry_out);
+			// GBE-Plus doesn't include carry here, but it should be included, right?
 			setFlagsArithmetic(input, operand, result, true);
+			//setFlagsArithmetic(input, operand + carry_out, result, true);
 			setReg(dest_reg, result);
 			break;
 		case 0x6: //SBC
 			carry_out ^= 0x1; //Invert carry
 	
 			result = (input - operand - carry_out);
-			setFlagsArithmetic(input, operand, result, false);
+			setFlagsArithmetic(input, operand + carry_out - 1, result, false);
+			//setFlagsArithmetic(input, operand, result, false);
 			setReg(dest_reg, result);
 			break;
 		case 0x7: //ROR
@@ -977,20 +1016,20 @@ void arm7tdmi::THUMB_ALUOps()
 	}
 }
 
-void arm7tdmi::THUMB_HiRegOps_BranchExchange()
+void arm7tdmi::THUMB_HiRegOps_BranchExchange(uint16_t currentInstruction)
 {
 	logging::info("Thumb Hi Reg Ops / Branch Exchange", "arm7tdmi");
-	uint8_t dest_reg = (Pipeline.executeInstr & 0x7);
-	uint8_t src_reg = ((Pipeline.executeInstr >> 3) & 0x7);
-	uint8_t sr_msb = (Pipeline.executeInstr & 0x40) >> 6;
-	uint8_t dr_msb = (Pipeline.executeInstr & 0x80) >> 7;
+	uint8_t dest_reg = (currentInstruction & 0x7);
+	uint8_t src_reg = ((currentInstruction >> 3) & 0x7);
+	uint8_t sr_msb = (currentInstruction & 0x40) >> 6;
+	uint8_t dr_msb = (currentInstruction & 0x80) >> 7;
 
 	src_reg |= sr_msb << 3;
 	dest_reg |= dr_msb << 3;
 	//if (sr_msb) { src_reg |= 0x8; }
 	//if (dr_msb) { dest_reg |= 0x8; }
 
-	uint8_t op = ((Pipeline.executeInstr >> 8) & 0x3);
+	uint8_t op = ((currentInstruction >> 8) & 0x3);
 
 	uint32_t input = getReg(dest_reg);
 	uint32_t result = 0;
@@ -1046,12 +1085,12 @@ void arm7tdmi::THUMB_HiRegOps_BranchExchange()
 		}
 }
 
-void arm7tdmi::THUMB_LoadPCRelative()
+void arm7tdmi::THUMB_LoadPCRelative(uint16_t currentInstruction)
 {
-	uint16_t offset = (Pipeline.executeInstr & 0xFF) * 4;
-	uint8_t dest_reg = ((Pipeline.executeInstr >> 8) & 0x7);
+	uint16_t offset = (currentInstruction & 0xFF) * 4;
+	uint8_t dest_reg = ((currentInstruction >> 8) & 0x7);
 
-	uint32_t load_addr = ((getReg(15) + 4) & ~0x2) + offset;
+	uint32_t load_addr = (getReg(15) & ~0x2) + offset;
 
 	uint32_t value = Memory->get32(load_addr);
 	setReg(dest_reg, value);
@@ -1059,12 +1098,12 @@ void arm7tdmi::THUMB_LoadPCRelative()
 	logging::info("Thumb Load PC Relative (load R" + helpers::intToHex(dest_reg) + " with " + helpers::intToHex(value) + ")", "arm7tdmi");
 }
 
-void arm7tdmi::THUMB_MultipleLoadStore()
+void arm7tdmi::THUMB_MultipleLoadStore(uint16_t currentInstruction)
 {
 	logging::info("Thumb Multiple Load Store", "arm7tdmi");
-	uint8_t r_list = (Pipeline.executeInstr & 0xFF);
-	uint8_t base_reg = ((Pipeline.executeInstr >> 8) & 0x7);
-	uint8_t op = (Pipeline.executeInstr & 0x800) ? 1 : 0;
+	uint8_t r_list = (currentInstruction & 0xFF);
+	uint8_t base_reg = ((currentInstruction >> 8) & 0x7);
+	uint8_t op = (currentInstruction & 0x800) ? 1 : 0;
 
 	uint32_t base_addr = getReg(base_reg);
 	uint32_t reg_value = 0;
@@ -1164,10 +1203,10 @@ void arm7tdmi::THUMB_MultipleLoadStore()
 	}
 }
 
-void arm7tdmi::THUMB_ConditionalBranch()
+void arm7tdmi::THUMB_ConditionalBranch(uint16_t currentInstruction)
 {
-	uint8_t offset = (Pipeline.executeInstr & 0xFF);
-	uint8_t op = ((Pipeline.executeInstr >> 8) & 0xF);
+	uint8_t offset = (currentInstruction & 0xFF);
+	uint8_t op = ((currentInstruction >> 8) & 0xF);
 	logging::info("Thumb Conditional Branch (condition " + helpers::intToHex(op) + ")", "arm7tdmi");
 
 	int16_t jump_addr = 0;
@@ -1239,16 +1278,16 @@ void arm7tdmi::THUMB_ConditionalBranch()
 	logging::info(doBranch ? "condition true" : "condition false");
 	if (doBranch)
 	{
-		logging::info("branched to " + helpers::intToHex(getReg(15) + jump_addr + 4));
-		setReg(15, getReg(15) + 4 + jump_addr);
+		logging::info("branched to " + helpers::intToHex(getReg(15) + jump_addr));
+		setReg(15, getReg(15) + jump_addr);
 	}
 }
 
-void arm7tdmi::THUMB_LongBranchLink()
+void arm7tdmi::THUMB_LongBranchLink(uint16_t currentInstruction)
 {
 	logging::info("Thumb Long Branch and Link", "arm7tdmi");
 	//Determine if this is the first or second instruction executed
-	bool first_op = !(((Pipeline.executeInstr >> 11) & 0x1F) == 0x1F);
+	bool first_op = !(((currentInstruction >> 11) & 0x1F) == 0x1F);
 
 	uint32_t lbl_addr = 0;
 
@@ -1259,7 +1298,7 @@ void arm7tdmi::THUMB_LongBranchLink()
 		uint8_t pre_bit = (r15 & 0x800000) ? 1 : 0;
 
 		//Grab upper 11-bits of destination address
-		lbl_addr = ((Pipeline.executeInstr & 0x7FF) << 12);
+		lbl_addr = ((currentInstruction & 0x7FF) << 12);
 
 		//Add as a 2's complement to PC
 		if (lbl_addr & 0x400000) { lbl_addr |= 0xFF800000; }
@@ -1276,7 +1315,7 @@ void arm7tdmi::THUMB_LongBranchLink()
 
 		//Grab lower 11-bits of destination address
 		lbl_addr = getReg(14);
-		lbl_addr += ((Pipeline.executeInstr & 0x7FF) << 1);
+		lbl_addr += ((currentInstruction & 0x7FF) << 1);
 
 		setReg(15, lbl_addr & ~0x1);
 		setReg(14, next_instr_addr);
@@ -1410,5 +1449,19 @@ bool arm7tdmi::rotateRight(uint32_t* value, int shiftAmount)
 		*value >>= 1;
 		*value |= (uint32_t)carryIn << 31;
 		return carryOut;
+	}
+}
+
+void arm7tdmi::rotateRightSpecial(uint32_t* value, int shiftAmount)
+{
+	if (shiftAmount > 0)
+	{
+		for (int x = 0; x < (shiftAmount * 2); x++)
+		{
+			bool carry_out = *value & 0x1;
+			*value >>= 1;
+
+			if (carry_out) { *value |= 0x80000000; }
+		}
 	}
 }
