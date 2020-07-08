@@ -107,7 +107,7 @@ int main(int argc, char** argv)
 	memory mem(rom);
 	arm7tdmi CPU(&mem, false);
 
-	for (int i = 0; i < 30; i++)
+	for (int i = 0; i < 200; i++)
 	{
 		CPU.step();
 	}

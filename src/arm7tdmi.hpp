@@ -46,8 +46,14 @@ class arm7tdmi
 
 		//THUMB instructions
 		void THUMB_MoveShiftedRegister();
+		void THUMB_AddSubtract();
+		void THUMB_MvCmpAddSubImmediate();
+		void THUMB_ALUOps();
+		void THUMB_HiRegOps_BranchExchange();
 		void THUMB_LoadPCRelative();
+		void THUMB_MultipleLoadStore();
 		void THUMB_ConditionalBranch();
+		void THUMB_LongBranchLink();
 
 		//Helper functions
 		void setFlagsLogical(uint32_t result, int carryOut);

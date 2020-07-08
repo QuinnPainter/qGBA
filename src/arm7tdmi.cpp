@@ -2,6 +2,9 @@
 #include "logging.hpp"
 #include "helpers.hpp"
 
+// good reference point for instructions:
+// https://github.com/shonumi/gbe-plus/
+
 constexpr uint32_t Nflag = 0x80000000;
 constexpr uint32_t Zflag = 0x40000000;
 constexpr uint32_t Cflag = 0x20000000;
@@ -188,6 +191,7 @@ void arm7tdmi::step()
 			Pipeline.executeInstr = Memory->get16(state.R[15]);
 			Pipeline.decodeInstr = Memory->get16(state.R[15] + 2);
 			Pipeline.fetchInstr = Memory->get16(state.R[15] + 4);
+			state.R[15] += 4;
 		}
 		else
 		{
@@ -200,6 +204,8 @@ void arm7tdmi::step()
 		Pipeline.valid = true;
 	}
 
+	logging::info(helpers::intToHex(getReg(15)) + " " + helpers::intToHex(Pipeline.executeInstr));
+
 	if (state.CPSR & 0x20)
 	{
 		//THUMB
@@ -209,7 +215,7 @@ void arm7tdmi::step()
 			{
 				if ((Pipeline.executeInstr & 0x1800) == 0x1800)
 				{
-					logging::error("Unimplemented THUMB instruction: Add/Subtract: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					THUMB_AddSubtract();
 				}
 				else
 				{
@@ -219,7 +225,7 @@ void arm7tdmi::step()
 			}
 			case 0b001:
 			{
-				logging::error("Unimplemented THUMB instruction: Mv/Cmp/Add/Sub Immediate: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+				THUMB_MvCmpAddSubImmediate();
 				break;
 			}
 			case 0b010:
@@ -227,11 +233,11 @@ void arm7tdmi::step()
 				uint8_t checkBits = (Pipeline.executeInstr >> 10) & 0b111;
 				if (checkBits == 0b000)
 				{
-					logging::error("Unimplemented THUMB instruction: ALU Ops: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					THUMB_ALUOps();
 				}
 				else if (checkBits == 0b001)
 				{
-					logging::error("Unimplemented THUMB instruction: Hi Reg Ops / Branch Exchange: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					THUMB_HiRegOps_BranchExchange();
 				}
 				else if ((checkBits & 0b110) == 0b010)
 				{
@@ -301,7 +307,7 @@ void arm7tdmi::step()
 				}
 				else
 				{
-					logging::error("Unimplemented THUMB instruction: Multiple Load/Store: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					THUMB_MultipleLoadStore();
 				}
 				break;
 			}
@@ -309,7 +315,7 @@ void arm7tdmi::step()
 			{
 				if (Pipeline.executeInstr & 0x1000)
 				{
-					logging::error("Unimplemented THUMB instruction: Long Branch with Link: " + helpers::intToHex(Pipeline.executeInstr), "arm7tdmi");
+					THUMB_LongBranchLink();
 				}
 				else
 				{
@@ -696,7 +702,7 @@ void arm7tdmi::ARM_SingleDataTransfer()
 	uint8_t srcReg = (Pipeline.executeInstr >> 12) & 0xF;
 	uint32_t offset;
 
-	if (offsetImmediate)
+	if (offsetImmediate == false)
 	{
 		offset = Pipeline.executeInstr & 0xFFF;
 	}
@@ -788,23 +794,381 @@ void arm7tdmi::THUMB_MoveShiftedRegister()
 	setFlagsLogical(result, shiftOut);
 }
 
+void arm7tdmi::THUMB_AddSubtract()
+{
+	logging::info("Thumb Add/Subtract", "arm7tdmi");
+	uint8_t dest_reg = (Pipeline.executeInstr & 0x7);
+	uint8_t src_reg = ((Pipeline.executeInstr >> 3) & 0x7);
+	uint8_t op = ((Pipeline.executeInstr >> 9) & 0x3);
+
+	uint32_t input = getReg(src_reg);
+	uint32_t result = 0;
+	uint32_t operand = 0;
+	uint8_t imm_reg = ((Pipeline.executeInstr >> 6) & 0x7);
+
+	//Perform addition or subtraction
+	switch (op)
+	{
+		case 0x0: //Add with register as operand
+			operand = getReg(imm_reg);
+			result = input + operand;
+			break;
+		case 0x1: //Subtract with register as operand
+			operand = getReg(imm_reg);
+			result = input - operand;
+			break;
+		case 0x2: //Add with 3-bit immediate as operand
+			operand = imm_reg;
+			result = input + operand;
+			break;
+		case 0x3: //Subtract with 3-bit immediate as operand
+			operand = imm_reg;
+			result = input - operand;
+			break;
+	}
+
+	setReg(dest_reg, result);
+	setFlagsArithmetic(input, operand, result, !((bool)(op & 0x1)));
+}
+
+void arm7tdmi::THUMB_MvCmpAddSubImmediate()
+{
+	logging::info("Thumb Mv/Cmp/Add/Sub Immediate", "arm7tdmi");
+	uint8_t dest_reg = ((Pipeline.executeInstr >> 8) & 0x7);
+	uint8_t op = ((Pipeline.executeInstr >> 11) & 0x3);
+
+	uint32_t input = getReg(dest_reg);
+	uint32_t result = 0;
+
+	uint32_t operand = (Pipeline.executeInstr & 0xFF);
+
+	switch (op)
+	{
+		case 0x0: //MOV
+			result = operand;
+			setFlagsLogical(result, 2);
+			break;
+		case 0x1: //CMP
+		case 0x3: //SUB
+			result = (input - operand);
+			setFlagsArithmetic(input, operand, result, false);
+			break;
+		case 0x2: //ADD
+			result = (input + operand);
+			setFlagsArithmetic(input, operand, result, true);
+			break;
+	}
+
+	//Do not update the destination register if CMP is the operation!
+	if (op != 1) { setReg(dest_reg, result); }
+}
+
+void arm7tdmi::THUMB_ALUOps()
+{
+	logging::info("Thumb ALU Ops", "arm7tdmi");
+	uint8_t dest_reg = (Pipeline.executeInstr & 0x7);
+	uint8_t src_reg = ((Pipeline.executeInstr >> 3) & 0x7);
+	uint8_t op = ((Pipeline.executeInstr >> 6) & 0xF);
+
+	uint32_t input = getReg(dest_reg);
+	uint32_t result = 0;
+	uint32_t operand = getReg(src_reg);
+	uint8_t shift_out = 0;
+	uint8_t carry_out = (state.CPSR & Cflag) ? 1 : 0;
+
+	//Perform ALU operations
+	switch (op)
+	{
+		case 0x0: //AND
+			result = (input & operand);
+			setFlagsLogical(result, 2);
+			setReg(dest_reg, result);
+			break;
+		case 0x1: //XOR
+			result = (input ^ operand);
+			setFlagsLogical(result, 2);
+			setReg(dest_reg, result);
+			break;
+		case 0x2: //LSL
+			operand &= 0xFF;
+			if (operand != 0) { shift_out = logicalShiftLeft(&input, operand); }
+			result = input;
+			
+			setFlagsLogical(result, shift_out);
+			setReg(dest_reg, result);
+			break;
+		case 0x3: //LSR
+			operand &= 0xFF;
+			if (operand != 0) { shift_out = logicalShiftRight(&input, operand); }
+			result = input;
+	
+			setFlagsLogical(result, shift_out);
+			setReg(dest_reg, result);
+			break;
+		case 0x4: //ASR
+			operand &= 0xFF;
+			if (operand != 0) { shift_out = arithmeticShiftRight(&input, operand); }
+			result = input;
+	
+			setFlagsLogical(result, shift_out);
+			setReg(dest_reg, result);
+			break;
+		case 0x5: //ADC
+			result = (input + operand + carry_out);
+			setFlagsArithmetic(input, operand, result, true);
+			setReg(dest_reg, result);
+			break;
+		case 0x6: //SBC
+			carry_out ^= 0x1; //Invert carry
+	
+			result = (input - operand - carry_out);
+			setFlagsArithmetic(input, operand, result, false);
+			setReg(dest_reg, result);
+			break;
+		case 0x7: //ROR
+			operand &= 0xFF;
+			if (operand != 0) { shift_out = rotateRight(&input, operand); }
+			result = input;
+	
+			setFlagsLogical(result, shift_out);
+			setReg(dest_reg, result);
+			break;
+		case 0x8: //TST
+			result = (input & operand);
+			setFlagsLogical(result, 2);
+			break;
+		case 0x9: //NEG
+			input = 0;
+			result = (input - operand);
+			setFlagsArithmetic(input, operand, result, false);
+			setReg(dest_reg, result);
+			break;
+		case 0xA: //CMP
+			result = (input - operand);
+			setFlagsArithmetic(input, operand, result, false);
+			break;
+		case 0xB: //CMN
+			result = (input + operand);
+			setFlagsArithmetic(input, operand, result, true);
+			break;
+		case 0xC: //ORR
+			result = (input | operand);
+	
+			setFlagsLogical(result, 2);
+			setReg(dest_reg, result);
+			break;
+		case 0xD: //MUL
+			result = (input * operand);
+	
+			setFlagsLogical(result, 2);
+			//TODO - Figure out what the carry flag should be for this opcode.
+			setReg(dest_reg, result);
+			break;
+		case 0xE: //BIC
+			result = (input & ~operand);
+			setFlagsLogical(result, 2);
+			setReg(dest_reg, result);
+			break;
+		case 0xF: //MVN
+			result = ~operand;
+			setFlagsLogical(result, 2);
+			setReg(dest_reg, result);
+			break;
+	}
+}
+
+void arm7tdmi::THUMB_HiRegOps_BranchExchange()
+{
+	logging::info("Thumb Hi Reg Ops / Branch Exchange", "arm7tdmi");
+	uint8_t dest_reg = (Pipeline.executeInstr & 0x7);
+	uint8_t src_reg = ((Pipeline.executeInstr >> 3) & 0x7);
+	uint8_t sr_msb = (Pipeline.executeInstr & 0x40) >> 6;
+	uint8_t dr_msb = (Pipeline.executeInstr & 0x80) >> 7;
+
+	src_reg |= sr_msb << 3;
+	dest_reg |= dr_msb << 3;
+	//if (sr_msb) { src_reg |= 0x8; }
+	//if (dr_msb) { dest_reg |= 0x8; }
+
+	uint8_t op = ((Pipeline.executeInstr >> 8) & 0x3);
+
+	uint32_t input = getReg(dest_reg);
+	uint32_t result = 0;
+	uint32_t operand = getReg(src_reg);
+
+	if ((op == 3) && (dr_msb != 0))
+	{
+		logging::fatal ("Using BX but MSBd is set in THUMB_HiRegOps_BranchExchange", "arm7tdmi");
+	}
+
+	switch (op)
+	{
+		case 0x0: //ADD
+			//When the destination register is the PC, auto-align operand to half-word
+			if (dest_reg == 15) { operand &= ~0x1; }
+			result = input + operand;
+			setReg(dest_reg, result);
+			break;
+		case 0x1: //CMP
+			result = (input - operand);
+			setFlagsArithmetic(input, operand, result, false);
+			break;
+		case 0x2: //MOV
+			//When the destination register is the PC, auto-align operand to half-word
+			if (dest_reg == 15) { operand &= ~0x1; }
+			result = operand;
+			setReg(dest_reg, result);
+			break;
+		case 0x3: //BX
+			//Switch to ARM mode if necessary
+			if ((operand & 0x1) == 0)
+			{
+				logging::info("Switching to ARM", "arm7tdmi");
+				state.CPSR &= ~0x20;
+				operand &= ~0x3;
+			}
+			else
+			{
+				//Align operand to half-word
+				operand &= ~0x1;
+			}
+	
+			//Auto-align PC when using R15 as an operand
+			if (src_reg == 15)
+			{
+				setReg(15, getReg(15) & ~0x2);
+			}
+			else
+			{
+				setReg(15, operand); 
+			}
+			break;
+		}
+}
+
 void arm7tdmi::THUMB_LoadPCRelative()
 {
-	logging::info("Thumb Load PC Relative", "arm7tdmi");
 	uint16_t offset = (Pipeline.executeInstr & 0xFF) * 4;
 	uint8_t dest_reg = ((Pipeline.executeInstr >> 8) & 0x7);
 
-	uint32_t load_addr = (state.R[15] & ~0x2) + offset;
+	uint32_t load_addr = ((getReg(15) + 4) & ~0x2) + offset;
 
 	uint32_t value = Memory->get32(load_addr);
 	setReg(dest_reg, value);
+	//logging::info("addr " + helpers::intToHex(load_addr));
+	logging::info("Thumb Load PC Relative (load R" + helpers::intToHex(dest_reg) + " with " + helpers::intToHex(value) + ")", "arm7tdmi");
+}
+
+void arm7tdmi::THUMB_MultipleLoadStore()
+{
+	logging::info("Thumb Multiple Load Store", "arm7tdmi");
+	uint8_t r_list = (Pipeline.executeInstr & 0xFF);
+	uint8_t base_reg = ((Pipeline.executeInstr >> 8) & 0x7);
+	uint8_t op = (Pipeline.executeInstr & 0x800) ? 1 : 0;
+
+	uint32_t base_addr = getReg(base_reg);
+	uint32_t reg_value = 0;
+	uint8_t n_count = 0;
+
+	uint32_t old_base = base_addr;
+	uint8_t transfer_reg = 0xFF;
+	bool write_back = true;
+
+	//Find out the first register in the Register List
+	for (int x = 0; x < 8; x++)
+	{
+		if (r_list & (1 << x))
+		{
+			transfer_reg = x;
+			x = 0xFF;
+			break;
+		}
+	}
+
+	//Grab n_count
+	for (int x = 0; x < 8; x++)
+	{
+		if ((r_list >> x) & 0x1) { n_count++; }
+	}
+
+	//Perform multi load-store ops
+	switch (op)
+	{
+		case 0x0: //STMIA
+			//If register list is not empty, store normally
+			if (r_list != 0)
+			{
+				//Cycle through the register list
+				for (int x = 0; x < 8; x++)
+				{
+					if (r_list & 0x1)
+					{
+						reg_value = getReg(x);
+	
+						if ((x == transfer_reg) && (base_reg == transfer_reg)) { Memory->set32(base_addr, old_base); }
+						else { Memory->set32(base_addr, reg_value); }
+	
+						//Update base register
+						base_addr += 4;
+						setReg(base_reg, base_addr);
+	
+						if ((n_count - 1) != 0) { n_count--; }
+						else { x = 10; break; }
+					}
+					r_list >>= 1;
+				}
+			}
+			else //Special case with empty list
+			{
+				//Store PC, then add 0x40 to base register
+				Memory->set32(base_addr, getReg(15));
+				base_addr += 0x40;
+				setReg(base_reg, base_addr);
+	
+				//Clock CPU and controllers - ???
+				//TODO - find out what to do here...
+			}
+			break;
+		case 0x1: //LDMIA
+			//If register list is not empty, load normally
+			if (r_list != 0)
+			{
+				//Cycle through the register list
+				for (int x = 0; x < 8; x++)
+				{
+					if (r_list & 0x1)
+					{
+						if ((x == transfer_reg) && (base_reg == transfer_reg)) { write_back = false; }
+						reg_value = Memory->get32(base_addr);
+						setReg(x, reg_value);
+	
+						//Update base register
+						base_addr += 4;
+						if (write_back) { setReg(base_reg, base_addr); }
+					}
+	
+					r_list >>= 1;
+				}
+			}
+			else //Special case with empty list
+			{
+				//Load PC, then add 0x40 to base register
+				setReg(15, Memory->get32(base_addr));
+				base_addr += 0x40;
+				setReg(base_reg, base_addr);
+	
+				//Clock CPU and controllers - ???
+				//TODO - find out what to do here...
+			}
+			break;
+	}
 }
 
 void arm7tdmi::THUMB_ConditionalBranch()
 {
-	logging::info("Thumb Conditional Branch", "arm7tdmi");
 	uint8_t offset = (Pipeline.executeInstr & 0xFF);
 	uint8_t op = ((Pipeline.executeInstr >> 8) & 0xF);
+	logging::info("Thumb Conditional Branch (condition " + helpers::intToHex(op) + ")", "arm7tdmi");
 
 	int16_t jump_addr = 0;
 
@@ -872,9 +1236,50 @@ void arm7tdmi::THUMB_ConditionalBranch()
 			break;
 	}
 
+	logging::info(doBranch ? "condition true" : "condition false");
 	if (doBranch)
 	{
-		setReg(15, getReg(15) + jump_addr);
+		logging::info("branched to " + helpers::intToHex(getReg(15) + jump_addr + 4));
+		setReg(15, getReg(15) + 4 + jump_addr);
+	}
+}
+
+void arm7tdmi::THUMB_LongBranchLink()
+{
+	logging::info("Thumb Long Branch and Link", "arm7tdmi");
+	//Determine if this is the first or second instruction executed
+	bool first_op = !(((Pipeline.executeInstr >> 11) & 0x1F) == 0x1F);
+
+	uint32_t lbl_addr = 0;
+
+	//Perform 1st 16-bit operation
+	if (first_op)
+	{
+		uint32_t r15 = getReg(15);
+		uint8_t pre_bit = (r15 & 0x800000) ? 1 : 0;
+
+		//Grab upper 11-bits of destination address
+		lbl_addr = ((Pipeline.executeInstr & 0x7FF) << 12);
+
+		//Add as a 2's complement to PC
+		if (lbl_addr & 0x400000) { lbl_addr |= 0xFF800000; }
+		lbl_addr += r15;
+
+		//Save label to LR
+		setReg(14, lbl_addr);
+	}
+	else //Perform 2nd 16-bit operation
+	{
+		//Grab address of the "next" instruction to place in LR, set Bit 0 to 1
+		uint32_t next_instr_addr = (getReg(15) - 2);
+		next_instr_addr |= 1;
+
+		//Grab lower 11-bits of destination address
+		lbl_addr = getReg(14);
+		lbl_addr += ((Pipeline.executeInstr & 0x7FF) << 1);
+
+		setReg(15, lbl_addr & ~0x1);
+		setReg(14, next_instr_addr);
 	}
 }
 
