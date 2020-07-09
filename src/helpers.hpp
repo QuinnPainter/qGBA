@@ -30,7 +30,8 @@ class helpers
 		//https://stackoverflow.com/questions/42534749/signed-extension-from-24-bit-to-32-bit-in-c
 		template<class T>
 		static T signExtend(T x, const int bits) {
-			T m = 1 << (bits - 1);
+			T m = 1;
+			m <<= (bits - 1);
 			return (x ^ m) - m;
 		}
 };

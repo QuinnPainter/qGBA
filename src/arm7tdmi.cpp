@@ -31,7 +31,7 @@ arm7tdmi::arm7tdmi(memory* mem, bool bios)
 		//https://problemkaputt.de/gbatek.htm#biosramusage
 		state = {
 			{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x3007F00, 0, 0x08000000}, //R
-			0x1F, //CPSR - Start in System mode (should this be User? hmm...)
+			0x1F, //CPSR - Start in System mode
 			0x3007FE0, //R13_svc
 			0, //R14_svc
 			0, //SPSR_svc
@@ -327,66 +327,63 @@ void arm7tdmi::decode()
 	{
 		//ARM
 		uint32_t currentInstr = Pipeline.instrPipeline[pipelineIndex];
-		if (checkCondCode(currentInstr))
+		switch ((currentInstr >> 26) & 0b11)
 		{
-			switch ((currentInstr >> 26) & 0b11)
+			case 0b00:
 			{
-				case 0b00:
+				if ((currentInstr & 0x12FFF10) == 0x12FFF10)
 				{
-					if ((currentInstr & 0x12FFF10) == 0x12FFF10)
+					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_3;
+				}
+				else if ((currentInstr & 0x2000000) == 0x2000000 || (currentInstr & 0x80) != 0x80)
+				{
+					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_5;
+				}
+				else if ((currentInstr & 0x60) == 0)
+				{
+					if ((currentInstr >> 24) & 1)
 					{
-						Pipeline.instrOperation[pipelineIndex] = instruction::ARM_3;
-					}
-					else if ((currentInstr & 0x2000000) == 0x2000000 || (currentInstr & 0x80) != 0x80)
-					{
-						Pipeline.instrOperation[pipelineIndex] = instruction::ARM_5;
-					}
-					else if ((currentInstr & 0x60) == 0)
-					{
-						if ((currentInstr >> 24) & 1)
-						{
-							Pipeline.instrOperation[pipelineIndex] = instruction::ARM_12;
-						}
-						else
-						{
-							Pipeline.instrOperation[pipelineIndex] = instruction::ARM_7;
-						}
+						Pipeline.instrOperation[pipelineIndex] = instruction::ARM_12;
 					}
 					else
 					{
-						Pipeline.instrOperation[pipelineIndex] = instruction::ARM_10;
+						Pipeline.instrOperation[pipelineIndex] = instruction::ARM_7;
 					}
-					break;
 				}
-				case 0b01:
+				else
 				{
-					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_9;
-					break;
+					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_10;
 				}
-				case 0b10:
+				break;
+			}
+			case 0b01:
+			{
+				Pipeline.instrOperation[pipelineIndex] = instruction::ARM_9;
+				break;
+			}
+			case 0b10:
+			{
+				if ((currentInstr >> 25) & 1)
 				{
-					if ((currentInstr >> 25) & 1)
-					{
-						Pipeline.instrOperation[pipelineIndex] = instruction::ARM_4;
-					}
-					else
-					{
-						Pipeline.instrOperation[pipelineIndex] = instruction::ARM_11;
-					}
-					break;
+					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_4;
 				}
-				case 0b11:
+				else
 				{
-					if (((currentInstr >> 24) & 0xF) == 0xF)
-					{
-						Pipeline.instrOperation[pipelineIndex] = instruction::ARM_13;
-					}
-					else
-					{
-						// Coprocessor instruction.
-					}
-					break;
+					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_11;
 				}
+				break;
+			}
+			case 0b11:
+			{
+				if (((currentInstr >> 24) & 0xF) == 0xF)
+				{
+					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_13;
+				}
+				else
+				{
+					// Coprocessor instruction.
+				}
+				break;
 			}
 		}
 	}
@@ -396,6 +393,8 @@ void arm7tdmi::execute()
 {
 	uint8_t pipelineIndex = (Pipeline.pipelinePtr + 1) % 3;
 	if (Pipeline.instrOperation[pipelineIndex] == instruction::PIPELINE_FILL) { return; }
+
+	//logging::info(helpers::intToHex(Pipeline.instrPipeline[pipelineIndex]));
 
 	if (state.CPSR & 0x20)
 	{
@@ -474,7 +473,10 @@ void arm7tdmi::ARM_BranchExchange(uint32_t currentInstruction)
 
 void arm7tdmi::ARM_Branch(uint32_t currentInstruction)
 {
-	int32_t offset = helpers::signExtend((currentInstruction & 0xFFFFFF) << 2, 24);
+	uint32_t offset = helpers::signExtend((currentInstruction & 0xFFFFFF) << 2, 26);
+	//uint32_t offset = (currentInstruction & 0xFFFFFF) << 2;
+	//if (offset & 0x2000000) { offset |= 0xFC000000; }
+
 	if (currentInstruction & 0x1000000)
 	{
 		//Branch with Link
@@ -1637,7 +1639,8 @@ void arm7tdmi::setFlagsArithmetic(uint32_t op1, uint32_t op2, uint32_t result, b
 	}
 	else
 	{
-		state.CPSR = ((result > op1) ? state.CPSR | Cflag : state.CPSR & ~Cflag);
+		//state.CPSR = ((result > op1) ? state.CPSR | Cflag : state.CPSR & ~Cflag);
+		state.CPSR = (op2 <= op1) ? state.CPSR | Cflag : state.CPSR & ~Cflag;
 	}
 	//Overflow flag
 	uint32_t subAdjOp2;
@@ -1696,10 +1699,11 @@ bool arm7tdmi::arithmeticShiftRight(uint32_t* value, int shiftAmount)
 {
 	if (shiftAmount > 0)
 	{
-		bool carryOut = (1 << (shiftAmount - 1)) & *value;
+		bool carryOut = 0;//= (1 << (shiftAmount - 1)) & *value;
 		uint32_t signBit = *value & 0x80000000;
 		for (int i = 0; i < shiftAmount; i++)
 		{
+			carryOut = *value & 0x1;
 			*value >>= 1;
 			*value |= signBit;
 		}
@@ -1724,12 +1728,13 @@ bool arm7tdmi::rotateRight(uint32_t* value, int shiftAmount)
 {
 	if (shiftAmount > 0)
 	{
-		bool carryOut = (1 << (shiftAmount - 1)) & *value;
+		//bool carryOut = (1 << (shiftAmount - 1)) & *value;
+		bool carryOut = 0;
 		for (int i = 0; i < shiftAmount; i++)
 		{
-			uint32_t carry = *value & 1;
+			bool carryOut = *value & 1;
 			*value >>= 1;
-			*value |= carry << 31;
+			*value |= (uint32_t)carryOut << 31;
 		}
 		return carryOut;
 	}
