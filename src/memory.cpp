@@ -2,10 +2,11 @@
 #include "logging.hpp"
 #include "helpers.hpp"
 
-memory::memory(uint8_t* rom, uint32_t romSize)
+memory::memory(uint8_t* rom, uint32_t romSize, gpu* GPU)
 {
 	cartrom = rom;
 	this->romSize = romSize;
+	this->GPU = GPU;
 	iwram = new uint8_t[32768];
 	ewram = new uint8_t[262144];
 	memset(iwram, 0, sizeof(iwram));
@@ -64,13 +65,26 @@ uint8_t memory::get8(uint32_t addr)
 	}
 	else if (addr < 0x04000400)
 	{
-		logging::error("Tried to read from I/O area: " + helpers::intToHex(addr), "memory");
+		// IO area
+		if (addr < 0x04000060)
+		{
+			return GPU->getRegister(addr);
+		}
+		else
+		{
+			logging::error("Tried to read from I/O area: " + helpers::intToHex(addr), "memory");
+			return 0;
+		}
+	}
+	else if (addr < 0x05000000)
+	{
+		//Unused area
+		logging::warning("Tried to read from unused area: " + helpers::intToHex(addr), "memory");
 		return 0;
 	}
 	else if (addr < 0x08000000)
 	{
-		logging::error("Tried to read from VRAM area: " + helpers::intToHex(addr), "memory");
-		return 0xFF;
+		return GPU->getVRAM(addr);
 	}
 	else if (addr < 0x0A000000)
 	{
@@ -144,11 +158,24 @@ void memory::set8(uint32_t addr, uint8_t value)
 	}
 	else if (addr < 0x04000400)
 	{
-		logging::error("Tried to write to I/O area: " + helpers::intToHex(addr), "memory");
+		// IO area
+		if (addr < 0x04000060)
+		{
+			GPU->setRegister(addr, value);
+		}
+		else
+		{
+			logging::error("Tried to write to I/O area: " + helpers::intToHex(addr), "memory");
+		}
+	}
+	else if (addr < 0x05000000)
+	{
+		//Unused area
+		logging::warning("Tried to write to unused area: " + helpers::intToHex(addr), "memory");
 	}
 	else if (addr < 0x08000000)
 	{
-		logging::error("Tried to write to VRAM area: " + helpers::intToHex(addr), "memory");
+		GPU->setVRAM(addr, value);
 	}
 	else if (addr < 0x0A000000)
 	{
