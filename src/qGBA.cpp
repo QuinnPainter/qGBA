@@ -104,10 +104,11 @@ int main(int argc, char** argv)
 	//0xBE and 0xBF - Reserved space (All 0). Doesn't matter.
 	//Rest of the header only matters for multiboot.
 
-	memory mem(rom);
+	memory mem(rom, romSize);
 	arm7tdmi CPU(&mem, false);
 
-	for (int i = 0; i < 200; i++)
+	//for (int i = 0; i < 200; i++)
+	while(true)
 	{
 		CPU.step();
 	}

@@ -2,9 +2,10 @@
 #include "logging.hpp"
 #include "helpers.hpp"
 
-memory::memory(uint8_t* rom)
+memory::memory(uint8_t* rom, uint32_t romSize)
 {
 	cartrom = rom;
+	this->romSize = romSize;
 	iwram = new uint8_t[32768];
 	ewram = new uint8_t[262144];
 	memset(iwram, 0, sizeof(iwram));
@@ -15,6 +16,19 @@ memory::~memory()
 {
 	delete[] iwram;
 	delete[] ewram;
+}
+
+uint8_t memory::get8Cart(uint32_t addr)
+{
+	if (addr < romSize)
+	{
+		return cartrom[addr];
+	}
+	else
+	{
+		logging::warning("Read outside cart ROM", "memory");
+		return 0; // Open bus?
+	}
 }
 
 uint8_t memory::get8(uint32_t addr)
@@ -56,22 +70,22 @@ uint8_t memory::get8(uint32_t addr)
 	else if (addr < 0x08000000)
 	{
 		logging::error("Tried to read from VRAM area: " + helpers::intToHex(addr), "memory");
-		return 0;
+		return 0xFF;
 	}
 	else if (addr < 0x0A000000)
 	{
 		//ROM Wait State 0
-		return cartrom[addr - 0x08000000];
+		return get8Cart(addr - 0x08000000);
 	}
 	else if (addr < 0x0C000000)
 	{
 		//ROM Wait State 1
-		return cartrom[addr - 0x0A000000];
+		return get8Cart(addr - 0x0A000000);
 	}
 	else if (addr < 0x0E000000)
 	{
 		//ROM Wait State 2
-		return cartrom[addr - 0x0C000000];
+		return get8Cart(addr - 0x0C000000);
 	}
 	else if (addr < 0E010000)
 	{

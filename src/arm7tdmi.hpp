@@ -81,6 +81,8 @@ class arm7tdmi
 		void ARM_DataProcessing(uint32_t currentInstruction);
 		void ARM_PSRTransfer(uint32_t currentInstruction);
 		void ARM_SingleDataTransfer(uint32_t currentInstruction);
+		void ARM_HalfwordDataTransfer(uint32_t currentInstruction);
+		void ARM_BlockDataTransfer(uint32_t currentInstruction);
 
 		//THUMB instructions
 		void THUMB_MoveShiftedRegister(uint16_t currentInstruction);
@@ -89,6 +91,8 @@ class arm7tdmi
 		void THUMB_ALUOps(uint16_t currentInstruction);
 		void THUMB_HiRegOps_BranchExchange(uint16_t currentInstruction);
 		void THUMB_LoadPCRelative(uint16_t currentInstruction);
+		void THUMB_LoadStoreImmediate(uint16_t currentInstruction);
+		void THUMB_PushPop(uint16_t currentInstruction);
 		void THUMB_MultipleLoadStore(uint16_t currentInstruction);
 		void THUMB_ConditionalBranch(uint16_t currentInstruction);
 		void THUMB_LongBranchLink(uint16_t currentInstruction);

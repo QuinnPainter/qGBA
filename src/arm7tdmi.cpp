@@ -176,6 +176,7 @@ void arm7tdmi::step()
 		Pipeline.pipelinePtr = (Pipeline.pipelinePtr + 1) % 3;
 		state.R[15] += (state.CPSR & 0x20) ? 2 : 4;
 	}
+
 	//logging::info(helpers::intToHex(getReg(15)) + " " + helpers::intToHex(currentInstr));
 }
 
@@ -410,12 +411,12 @@ void arm7tdmi::execute()
 			case instruction::THUMB_6: THUMB_LoadPCRelative(currentInstruction); break;
 			case instruction::THUMB_7: logging::error("Unimplemented THUMB instruction: Load/Store Reg Offset: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
 			case instruction::THUMB_8: logging::error("Unimplemented THUMB instruction: Load/Store Sign-Extended: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
-			case instruction::THUMB_9: logging::error("Unimplemented THUMB instruction: Load/Store Immediate Offset: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+			case instruction::THUMB_9: THUMB_LoadStoreImmediate(currentInstruction); break;
 			case instruction::THUMB_10: logging::error("Unimplemented THUMB instruction: Load/Store Halfword: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
 			case instruction::THUMB_11: logging::error("Unimplemented THUMB instruction: SP Relative Load/Store: " + helpers::intToHex(currentInstruction), "arm7tdmi"); (currentInstruction); break;
 			case instruction::THUMB_12: logging::error("Unimplemented THUMB instruction: Load Address: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
 			case instruction::THUMB_13: logging::error("Unimplemented THUMB instruction: Add Offset to SP: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
-			case instruction::THUMB_14: logging::error("Unimplemented THUMB instruction: Push/Pop Registers: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+			case instruction::THUMB_14: THUMB_PushPop(currentInstruction); break;
 			case instruction::THUMB_15: THUMB_MultipleLoadStore(currentInstruction); break;
 			case instruction::THUMB_16: THUMB_ConditionalBranch(currentInstruction); break;
 			case instruction::THUMB_17: logging::error("Unimplemented THUMB instruction: Software Interrupt: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
@@ -437,8 +438,8 @@ void arm7tdmi::execute()
 				case instruction::ARM_5: ARM_DataProcessing(currentInstruction); break;
 				case instruction::ARM_7: logging::error("Unimplemented ARM instruction: Multiply: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
 				case instruction::ARM_9: ARM_SingleDataTransfer(currentInstruction); break;
-				case instruction::ARM_10: logging::error("Unimplemented instruction: Halfword Data Transfer: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
-				case instruction::ARM_11: logging::error("Unimplemented instruction: Block Data Transfer: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+				case instruction::ARM_10: ARM_HalfwordDataTransfer(currentInstruction); break;
+				case instruction::ARM_11: ARM_BlockDataTransfer(currentInstruction); break;
 				case instruction::ARM_12: logging::error("Unimplemented instruction: Single Data Swap: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
 				case instruction::ARM_13: logging::error("Unimplemented instruction: Software Interrupt: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
 				default: logging::fatal("Invalid instruction in ARM pipeline", "arm7tdmi"); break;
@@ -468,13 +469,7 @@ void arm7tdmi::ARM_BranchExchange(uint32_t currentInstruction)
 	if (addr & 0x1)
 	{
 		state.CPSR |= 0x20;
-		logging::info("Switched to THUMB", "arm7tdmi");
 	}
-	else
-	{
-		logging::info("Continue in ARM", "arm7tdmi");
-	}
-	logging::info("Branched and exchanged to " + helpers::intToHex(getReg(15)), "arm7tdmi");
 }
 
 void arm7tdmi::ARM_Branch(uint32_t currentInstruction)
@@ -485,13 +480,11 @@ void arm7tdmi::ARM_Branch(uint32_t currentInstruction)
 		//Branch with Link
 		setReg(14, getReg(15) - 4);
 		setReg(15, getReg(15) + offset);
-		logging::info("Branched and linked to " + helpers::intToHex(getReg(15)), "arm7tdmi");
 	}
 	else
 	{
 		//Branch
 		setReg(15, getReg(15) + offset);
-		logging::info("Branched to " + helpers::intToHex(getReg(15)), "arm7tdmi");
 	}
 }
 
@@ -509,7 +502,6 @@ void arm7tdmi::ARM_DataProcessing(uint32_t currentInstruction)
 		return;
 	}
 	bool shiftImmediate = !((bool)(currentInstruction & 0x10));
-	logging::info("Data Processing on R" + std::to_string(destReg), "arm7tdmi");
 
 	int shiftCarryOut = 2;
 	if (currentInstruction & 0x2000000)
@@ -660,7 +652,6 @@ void arm7tdmi::ARM_DataProcessing(uint32_t currentInstruction)
 
 void arm7tdmi::ARM_PSRTransfer(uint32_t currentInstruction)
 {
-	logging::info("PSR transfer", "arm7tdmi");
 	bool PSR = currentInstruction & 0x400000; //0 = CPSR  1 = SPSR
 	bool immediate = currentInstruction & 0x2000000;
 	bool opcode = currentInstruction & 0x200000;
@@ -729,7 +720,6 @@ void arm7tdmi::ARM_PSRTransfer(uint32_t currentInstruction)
 
 void arm7tdmi::ARM_SingleDataTransfer(uint32_t currentInstruction)
 {
-	logging::info("Single Data Transfer", "arm7tdmi");
 	bool offsetImmediate = currentInstruction & 0x2000000;
 	bool preIndexing = currentInstruction & 0x1000000;
 	bool offsetUp = currentInstruction & 0x800000;
@@ -799,11 +789,218 @@ void arm7tdmi::ARM_SingleDataTransfer(uint32_t currentInstruction)
 	}
 }
 
+void arm7tdmi::ARM_HalfwordDataTransfer(uint32_t currentInstruction)
+{
+	uint8_t pre_post = (currentInstruction & 0x1000000) ? 1 : 0;
+	uint8_t up_down = (currentInstruction & 0x800000) ? 1 : 0;
+	uint8_t offset_is_register = (currentInstruction & 0x400000) ? 1 : 0;
+	uint8_t write_back = (currentInstruction & 0x200000) ? 1 : 0;
+	uint8_t load_store = (currentInstruction & 0x100000) ? 1 : 0;
+	uint8_t base_reg = ((currentInstruction >> 16) & 0xF);
+	uint8_t dest_reg = ((currentInstruction >> 12) & 0xF);
+	uint8_t op = ((currentInstruction >> 5) & 0x3);
+
+	//Write-Back is always enabled for Post-Indexing
+	if (pre_post == 0) { write_back = 1; }
+
+	uint32_t base_offset = 0;
+	uint32_t base_addr = getReg(base_reg);
+	uint32_t value = 0;
+
+	if (offset_is_register == 0)
+	{
+		//Register is Bits 0-3
+		base_offset = getReg((currentInstruction & 0xF));
+
+		if ((currentInstruction & 0xF) == 15) { logging::warning("ARM_HalfwordDataTransfer Offset Register is PC", "arm7tdmi"); }
+	}
+	else
+	{
+		base_offset = (currentInstruction >> 8) & 0xF;
+		base_offset <<= 4;
+		base_offset |= (currentInstruction & 0xF);
+	}
+
+	//Increment or decrement before transfer if pre-indexing
+	if (pre_post == 1)
+	{
+		if (up_down == 1) { base_addr += base_offset; }
+		else { base_addr -= base_offset; }
+	}
+
+	//Perform Load or Store ops
+	switch (op)
+	{
+		case 0x1: //Load-Store unsigned halfword
+			if (load_store == 0)
+			{
+				//Store halfword
+				value = getReg(dest_reg);
+
+				//If PC is the Destination Register, add 4
+				if (dest_reg == 15) { value += 4; }
+
+				value &= 0xFFFF;
+				Memory->set16(base_addr, value);
+			}
+			else
+			{
+				//Load halfword
+				value = Memory->get16(base_addr);
+				setReg(dest_reg, value);
+			}
+
+			break;
+		case 0x2: //Load signed byte (sign extended)
+			value = Memory->get8(base_addr);
+
+			if (value & 0x80) { value |= 0xFFFFFF00; }
+			setReg(dest_reg, value);
+
+			break;
+		case 0x3: //Load signed halfword (sign extended)
+			value = Memory->get16(base_addr);
+
+			if (value & 0x8000) { value |= 0xFFFF0000; }
+			setReg(dest_reg, value);
+
+			break;
+		default: //SWP
+			logging::error("Encountered SWP in ARM_HalfwordDataTransfer. Check instruction decoding.", "arm7tdmi");
+			return;
+	}
+
+	//Increment or decrement after transfer if post-indexing
+	if (pre_post == 0)
+	{
+		if (up_down == 1) { base_addr += base_offset; }
+		else { base_addr -= base_offset; }
+	}
+
+	//Write-back into base register
+	if ((write_back == 1) && (base_reg != dest_reg)) { setReg(base_reg, base_addr); }
+}
+
+void arm7tdmi::ARM_BlockDataTransfer(uint32_t currentInstruction)
+{
+	uint8_t pre_post = (currentInstruction & 0x1000000) ? 1 : 0;
+	uint8_t up_down = (currentInstruction & 0x800000) ? 1 : 0;
+	uint8_t psr = (currentInstruction & 0x400000) ? 1 : 0;
+	uint8_t write_back = (currentInstruction & 0x200000) ? 1 : 0;
+	uint8_t load_store = (currentInstruction & 0x100000) ? 1 : 0;
+	uint8_t base_reg = ((currentInstruction >> 16) & 0xF);
+	uint16_t r_list = (currentInstruction & 0xFFFF);
+
+	if (base_reg == 15) { logging::warning("ARM_BlockDataTransfer: R15 used as Base Register", "arm7tdmi"); }
+
+	//Force USR mode if PSR bit is set
+	//cpu_modes temp_mode = current_cpu_mode;
+	//if (psr) { current_cpu_mode = USR; }
+
+	uint32_t base_addr = getReg(base_reg);
+	uint32_t old_base = base_addr;
+	uint8_t transfer_reg = 0xFF;
+
+	//Find out the first register in the Register List
+	for (int x = 0; x < 16; x++)
+	{
+		if (r_list & (1 << x))
+		{
+			transfer_reg = x;
+			x = 0xFF;
+			break;
+		}
+	}
+
+	//Load-Store with an ascending stack order, Up-Down = 1
+	if ((up_down == 1) && (r_list != 0))
+	{
+		for (int x = 0; x < 16; x++)
+		{
+			if (r_list & (1 << x))
+			{
+				//Increment before transfer if pre-indexing
+				if (pre_post == 1) { base_addr += 4; }
+
+				if (load_store == 0)
+				{
+					//Store registers
+					if ((x == transfer_reg) && (base_reg == transfer_reg)) { Memory->set32(base_addr, old_base); }
+					else { Memory->set32(base_addr, getReg(x)); }
+				}
+				else
+				{
+					//Load registers
+					if ((x == transfer_reg) && (base_reg == transfer_reg)) { write_back = 0; }
+					setReg(x, Memory->get32(base_addr));
+				}
+
+				//Increment after transfer if post-indexing
+				if (pre_post == 0) { base_addr += 4; }
+			}
+
+			//Write back the into base register
+			if (write_back == 1) { setReg(base_reg, base_addr); }
+		}
+	}
+
+	//Load-Store with a descending stack order, Up-Down = 0
+	else if ((up_down == 0) && (r_list != 0))
+	{
+		for (int x = 15; x >= 0; x--)
+		{
+			if (r_list & (1 << x))
+			{
+				//Decrement before transfer if pre-indexing
+				if (pre_post == 1) { base_addr -= 4; }
+
+				//Store registers
+				if (load_store == 0)
+				{
+					if ((x == transfer_reg) && (base_reg == transfer_reg)) { Memory->set32(base_addr, old_base); }
+					else { Memory->set32(base_addr, getReg(x)); }
+				}
+
+				//Load registers
+				else
+				{
+					if ((x == transfer_reg) && (base_reg == transfer_reg)) { write_back = 0; }
+					setReg(x, Memory->get32(base_addr));
+				}
+
+				//Decrement after transfer if post-indexing
+				if (pre_post == 0) { base_addr -= 4; }
+			}
+
+			//Write back the into base register
+			if (write_back == 1) { setReg(base_reg, base_addr); }
+		}
+	}
+	else //Special case, empty RList
+	{
+		//Load R15
+		if (load_store == 0) { Memory->set32(base_addr, getReg(15)); }
+		else //Store R15
+		{
+			setReg(15, Memory->get32(base_addr));
+		}
+
+		//Add 0x40 to base address if ascending stack, writeback into base register
+		if (up_down == 1) { setReg(base_reg, (base_addr + 0x40)); }
+
+		//Subtract 0x40 from base address if descending stack, writeback into base register
+		else { setReg(base_reg, (base_addr - 0x40)); }
+
+		logging::warning("ARM_BlockDataTransfer: Instruction uses empty register list", "arm7tdmi");
+	}
+
+	//if (psr) { current_cpu_mode = temp_mode; }
+}
+
 // Thumb instructions
 
 void arm7tdmi::THUMB_MoveShiftedRegister(uint16_t currentInstruction)
 {
-	logging::info("Thumb Move Shifted Register", "arm7tdmi");
 	uint8_t dest_reg = (currentInstruction & 0x7);
 	uint8_t src_reg = ((currentInstruction >> 3) & 0x7);
 	uint8_t offset = ((currentInstruction >> 6) & 0x1F);
@@ -832,7 +1029,6 @@ void arm7tdmi::THUMB_MoveShiftedRegister(uint16_t currentInstruction)
 
 void arm7tdmi::THUMB_AddSubtract(uint16_t currentInstruction)
 {
-	logging::info("Thumb Add/Subtract", "arm7tdmi");
 	uint8_t dest_reg = (currentInstruction & 0x7);
 	uint8_t src_reg = ((currentInstruction >> 3) & 0x7);
 	uint8_t op = ((currentInstruction >> 9) & 0x3);
@@ -869,7 +1065,6 @@ void arm7tdmi::THUMB_AddSubtract(uint16_t currentInstruction)
 
 void arm7tdmi::THUMB_MvCmpAddSubImmediate(uint16_t currentInstruction)
 {
-	logging::info("Thumb Mv/Cmp/Add/Sub Immediate", "arm7tdmi");
 	uint8_t dest_reg = ((currentInstruction >> 8) & 0x7);
 	uint8_t op = ((currentInstruction >> 11) & 0x3);
 
@@ -901,7 +1096,6 @@ void arm7tdmi::THUMB_MvCmpAddSubImmediate(uint16_t currentInstruction)
 
 void arm7tdmi::THUMB_ALUOps(uint16_t currentInstruction)
 {
-	logging::info("Thumb ALU Ops", "arm7tdmi");
 	uint8_t dest_reg = (currentInstruction & 0x7);
 	uint8_t src_reg = ((currentInstruction >> 3) & 0x7);
 	uint8_t op = ((currentInstruction >> 6) & 0xF);
@@ -1018,7 +1212,6 @@ void arm7tdmi::THUMB_ALUOps(uint16_t currentInstruction)
 
 void arm7tdmi::THUMB_HiRegOps_BranchExchange(uint16_t currentInstruction)
 {
-	logging::info("Thumb Hi Reg Ops / Branch Exchange", "arm7tdmi");
 	uint8_t dest_reg = (currentInstruction & 0x7);
 	uint8_t src_reg = ((currentInstruction >> 3) & 0x7);
 	uint8_t sr_msb = (currentInstruction & 0x40) >> 6;
@@ -1062,7 +1255,6 @@ void arm7tdmi::THUMB_HiRegOps_BranchExchange(uint16_t currentInstruction)
 			//Switch to ARM mode if necessary
 			if ((operand & 0x1) == 0)
 			{
-				logging::info("Switching to ARM", "arm7tdmi");
 				state.CPSR &= ~0x20;
 				operand &= ~0x3;
 			}
@@ -1094,13 +1286,116 @@ void arm7tdmi::THUMB_LoadPCRelative(uint16_t currentInstruction)
 
 	uint32_t value = Memory->get32(load_addr);
 	setReg(dest_reg, value);
-	//logging::info("addr " + helpers::intToHex(load_addr));
-	logging::info("Thumb Load PC Relative (load R" + helpers::intToHex(dest_reg) + " with " + helpers::intToHex(value) + ")", "arm7tdmi");
+}
+
+void arm7tdmi::THUMB_LoadStoreImmediate(uint16_t currentInstruction)
+{
+	uint8_t src_dest_reg = (currentInstruction & 0x7);
+	uint8_t base_reg = ((currentInstruction >> 3) & 0x7);
+	uint16_t offset = ((currentInstruction >> 6) & 0x1F);
+	uint8_t op = ((currentInstruction >> 11) & 0x3);
+
+	uint32_t value = 0;
+	uint32_t op_addr = getReg(base_reg);
+
+	switch (op)
+	{
+		case 0x0: //STR
+			value = getReg(src_dest_reg);
+			offset <<= 2;
+			op_addr += offset;
+
+			Memory->set32(op_addr, value);
+			break;
+		case 0x1: //LDR
+			offset <<= 2;
+			op_addr += offset;
+
+			value = Memory->get32(op_addr);
+			setReg(src_dest_reg, value);
+			break;
+		case 0x2: //STRB
+			value = getReg(src_dest_reg);
+			op_addr += offset;
+
+			Memory->set8(op_addr, value & 0xFF);
+			break;
+		case 0x3://LDRB
+			op_addr += offset;
+			value = Memory->get8(op_addr);
+
+			setReg(src_dest_reg, value);
+			break;
+	}
+}
+
+void arm7tdmi::THUMB_PushPop(uint16_t currentInstruction)
+{
+	uint32_t r13 = getReg(13);
+	uint32_t lr = getReg(14);
+	uint8_t r_list = (currentInstruction & 0xFF);
+	bool pc_lr_bit = (currentInstruction & 0x100);
+	uint8_t op = (currentInstruction & 0x800) ? 1 : 0;
+
+	uint8_t n_count = 0;
+
+	for (int x = 0; x < 8; x++)
+	{
+		if ((r_list >> x) & 0x1) { n_count++; }
+	}
+
+	switch (op)
+	{
+		case 0x0: //PUSH
+			if (pc_lr_bit)
+			{
+				r13 -= 4;
+				Memory->set32(r13, lr);
+				setReg(14, lr);
+			}
+
+			//Cycle through the register list
+			for (int x = 7; x >= 0; x--)
+			{
+				if (r_list & (1 << x))
+				{
+					r13 -= 4;
+					uint32_t push_value = getReg(x);
+					Memory->set32(r13, push_value);
+
+					if ((n_count - 1) != 0) { n_count--; }
+					else { x = 10; break; }
+				}
+			}
+
+			break;
+		case 0x1: //POP
+			//Cycle through the register list
+			for (int x = 0; x < 8; x++)
+			{
+				if (r_list & 0x1)
+				{
+					uint32_t pop_value = Memory->get32(r13);
+					setReg(x, pop_value);
+					r13 += 4;
+				}
+
+				r_list >>= 1;
+			}
+
+			if (pc_lr_bit)
+			{
+				setReg(15, Memory->get32(r13) & ~0x1);
+				r13 += 4;
+			}
+
+			break;
+	}
+	setReg(13, r13);
 }
 
 void arm7tdmi::THUMB_MultipleLoadStore(uint16_t currentInstruction)
 {
-	logging::info("Thumb Multiple Load Store", "arm7tdmi");
 	uint8_t r_list = (currentInstruction & 0xFF);
 	uint8_t base_reg = ((currentInstruction >> 8) & 0x7);
 	uint8_t op = (currentInstruction & 0x800) ? 1 : 0;
@@ -1207,7 +1502,6 @@ void arm7tdmi::THUMB_ConditionalBranch(uint16_t currentInstruction)
 {
 	uint8_t offset = (currentInstruction & 0xFF);
 	uint8_t op = ((currentInstruction >> 8) & 0xF);
-	logging::info("Thumb Conditional Branch (condition " + helpers::intToHex(op) + ")", "arm7tdmi");
 
 	int16_t jump_addr = 0;
 
@@ -1275,17 +1569,14 @@ void arm7tdmi::THUMB_ConditionalBranch(uint16_t currentInstruction)
 			break;
 	}
 
-	logging::info(doBranch ? "condition true" : "condition false");
 	if (doBranch)
 	{
-		logging::info("branched to " + helpers::intToHex(getReg(15) + jump_addr));
 		setReg(15, getReg(15) + jump_addr);
 	}
 }
 
 void arm7tdmi::THUMB_LongBranchLink(uint16_t currentInstruction)
 {
-	logging::info("Thumb Long Branch and Link", "arm7tdmi");
 	//Determine if this is the first or second instruction executed
 	bool first_op = !(((currentInstruction >> 11) & 0x1F) == 0x1F);
 
@@ -1298,7 +1589,7 @@ void arm7tdmi::THUMB_LongBranchLink(uint16_t currentInstruction)
 		uint8_t pre_bit = (r15 & 0x800000) ? 1 : 0;
 
 		//Grab upper 11-bits of destination address
-		lbl_addr = ((currentInstruction & 0x7FF) << 12);
+		lbl_addr = (((uint32_t)currentInstruction & 0x7FF) << 12);
 
 		//Add as a 2's complement to PC
 		if (lbl_addr & 0x400000) { lbl_addr |= 0xFF800000; }
@@ -1315,7 +1606,7 @@ void arm7tdmi::THUMB_LongBranchLink(uint16_t currentInstruction)
 
 		//Grab lower 11-bits of destination address
 		lbl_addr = getReg(14);
-		lbl_addr += ((currentInstruction & 0x7FF) << 1);
+		lbl_addr += (((uint32_t)currentInstruction & 0x7FF) << 1);
 
 		setReg(15, lbl_addr & ~0x1);
 		setReg(14, next_instr_addr);
