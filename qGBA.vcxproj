@@ -152,6 +152,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\arm7tdmi.cpp" />
+    <ClCompile Include="src\gpu.cpp" />
     <ClCompile Include="src\helpers.cpp" />
     <ClCompile Include="src\logging.cpp" />
     <ClCompile Include="src\memory.cpp" />
@@ -159,6 +160,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\arm7tdmi.hpp" />
+    <ClInclude Include="src\gpu.hpp" />
     <ClInclude Include="src\helpers.hpp" />
     <ClInclude Include="src\logging.hpp" />
     <ClInclude Include="src\memory.hpp" />

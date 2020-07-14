@@ -109,10 +109,11 @@ int main(int argc, char** argv)
 	memory mem(rom, romSize, &GPU);
 	arm7tdmi CPU(&mem, false);
 
-	//for (int i = 0; i < 200; i++)
+	//for (int i = 0; i < 10000; i++)
 	while(true)
 	{
 		CPU.step();
+		GPU.step(1);
 	}
 
 	delete[] rom;
