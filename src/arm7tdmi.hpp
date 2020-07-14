@@ -93,10 +93,17 @@ class arm7tdmi
 		void THUMB_ALUOps(uint16_t currentInstruction);
 		void THUMB_HiRegOps_BranchExchange(uint16_t currentInstruction);
 		void THUMB_LoadPCRelative(uint16_t currentInstruction);
+		void THUMB_LoadStoreRegOffset(uint16_t currentInstruction);
+		void THUMB_LoadStoreSignExtend(uint16_t currentInstruction);
 		void THUMB_LoadStoreImmediate(uint16_t currentInstruction);
+		void THUMB_LoadStoreHalfword(uint16_t currentInstruction);
+		void THUMB_LoadStoreSPRelative(uint16_t currentInstruction);
+		void THUMB_LoadAddress(uint16_t currentInstruction);
+		void THUMB_AddOffsetSP(uint16_t currentInstruction);
 		void THUMB_PushPop(uint16_t currentInstruction);
 		void THUMB_MultipleLoadStore(uint16_t currentInstruction);
 		void THUMB_ConditionalBranch(uint16_t currentInstruction);
+		void THUMB_UnconditionalBranch(uint16_t currentInstruction);
 		void THUMB_LongBranchLink(uint16_t currentInstruction);
 
 		//Helper functions

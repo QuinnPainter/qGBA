@@ -30,9 +30,9 @@ gpu::gpu()
 	paletteRAM = new uint8_t[1024];
 	vram = new uint8_t[98304];
 	objectRAM = new uint8_t[1024];
-	memset(paletteRAM, 0, sizeof(paletteRAM));
-	memset(vram, 0, sizeof(vram));
-	memset(objectRAM, 0, sizeof(objectRAM));
+	memset(paletteRAM, 0, 1024);
+	memset(vram, 0, 98304);
+	memset(objectRAM, 0, 1024);
 
 	screenData = new uint8_t[xResolution * yResolution * 3];
 
@@ -96,7 +96,7 @@ void gpu::setVRAM(uint32_t addr, uint8_t value)
 	}
 	else
 	{
-		logging::error("Write to invalid VRAM address: " + helpers::intToHex(addr), "gpu");
+		//logging::error("Write to invalid VRAM address: " + helpers::intToHex(addr), "gpu");
 	}
 }
 
@@ -116,7 +116,7 @@ uint8_t gpu::getVRAM(uint32_t addr)
 	}
 	else
 	{
-		logging::error("Read from invalid VRAM address: " + helpers::intToHex(addr), "gpu");
+		//logging::error("Read from invalid VRAM address: " + helpers::intToHex(addr), "gpu");
 		return 0;
 	}
 }
@@ -127,6 +127,10 @@ void gpu::setRegister(uint32_t addr, uint8_t value)
 	{
 		case 0x00: // DISPCNT byte 1
 			videoMode = value & 0x7;
+			if (videoMode != 4)
+			{
+				logging::important("Switched to unimplemented video mode: " + helpers::intToHex(value), "gpu");
+			}
 			if (videoMode > 5)
 			{
 				logging::fatal("Switched to invalid video mode: " + helpers::intToHex(value), "gpu");

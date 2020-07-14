@@ -408,18 +408,18 @@ void arm7tdmi::execute()
 			case instruction::THUMB_4: THUMB_ALUOps(currentInstruction); break;
 			case instruction::THUMB_5: THUMB_HiRegOps_BranchExchange(currentInstruction); break;
 			case instruction::THUMB_6: THUMB_LoadPCRelative(currentInstruction); break;
-			case instruction::THUMB_7: logging::error("Unimplemented THUMB instruction: Load/Store Reg Offset: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
-			case instruction::THUMB_8: logging::error("Unimplemented THUMB instruction: Load/Store Sign-Extended: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+			case instruction::THUMB_7: THUMB_LoadStoreRegOffset(currentInstruction); break;
+			case instruction::THUMB_8: THUMB_LoadStoreSignExtend(currentInstruction); break;
 			case instruction::THUMB_9: THUMB_LoadStoreImmediate(currentInstruction); break;
-			case instruction::THUMB_10: logging::error("Unimplemented THUMB instruction: Load/Store Halfword: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
-			case instruction::THUMB_11: logging::error("Unimplemented THUMB instruction: SP Relative Load/Store: " + helpers::intToHex(currentInstruction), "arm7tdmi"); (currentInstruction); break;
-			case instruction::THUMB_12: logging::error("Unimplemented THUMB instruction: Load Address: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
-			case instruction::THUMB_13: logging::error("Unimplemented THUMB instruction: Add Offset to SP: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+			case instruction::THUMB_10: THUMB_LoadStoreHalfword(currentInstruction); break;
+			case instruction::THUMB_11: THUMB_LoadStoreSPRelative(currentInstruction); break;
+			case instruction::THUMB_12: THUMB_LoadAddress(currentInstruction); break;
+			case instruction::THUMB_13: THUMB_AddOffsetSP(currentInstruction); break;
 			case instruction::THUMB_14: THUMB_PushPop(currentInstruction); break;
 			case instruction::THUMB_15: THUMB_MultipleLoadStore(currentInstruction); break;
 			case instruction::THUMB_16: THUMB_ConditionalBranch(currentInstruction); break;
 			case instruction::THUMB_17: logging::error("Unimplemented THUMB instruction: Software Interrupt: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
-			case instruction::THUMB_18: logging::error("Unimplemented THUMB instruction: Unconditional Branch: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+			case instruction::THUMB_18: THUMB_UnconditionalBranch(currentInstruction); break;
 			case instruction::THUMB_19: THUMB_LongBranchLink(currentInstruction); break;
 			default: logging::fatal("Invalid instruction in THUMB pipeline", "arm7tdmi"); break;
 		}
@@ -463,7 +463,12 @@ void arm7tdmi::flushPipeline()
 
 void arm7tdmi::ARM_BranchExchange(uint32_t currentInstruction)
 {
-	uint32_t addr = getReg(currentInstruction & 0xF);
+	uint8_t srcReg = currentInstruction & 0xF;
+	if (srcReg == 15)
+	{
+		logging::error("ARM_BranchExchange: R15 used as input", "arm7tdmi");
+	}
+	uint32_t addr = getReg(srcReg);
 	setReg(15, addr & (~0x1));
 	if (addr & 0x1)
 	{
@@ -1283,7 +1288,14 @@ void arm7tdmi::THUMB_ALUOps(uint16_t currentInstruction)
 			if (operand != 0) { shift_out = logicalShiftLeft(&input, operand); }
 			result = input;
 			
-			setFlagsLogical(result, shift_out);
+			//setFlagsLogical(result, shift_out);
+			state.CPSR = ((result == 0) ? state.CPSR | Zflag : state.CPSR & ~Zflag);
+			state.CPSR = ((result >> 31) ? state.CPSR | Nflag : state.CPSR & ~Nflag);
+			if (operand != 0 && shift_out < 2)
+			{
+				state.CPSR = (shift_out ? state.CPSR | Cflag : state.CPSR & ~Cflag);
+			}
+
 			setReg(dest_reg, result);
 			break;
 		case 0x3: //LSR
@@ -1291,7 +1303,14 @@ void arm7tdmi::THUMB_ALUOps(uint16_t currentInstruction)
 			if (operand != 0) { shift_out = logicalShiftRight(&input, operand); }
 			result = input;
 	
-			setFlagsLogical(result, shift_out);
+			//setFlagsLogical(result, shift_out);
+			state.CPSR = ((result == 0) ? state.CPSR | Zflag : state.CPSR & ~Zflag);
+			state.CPSR = ((result >> 31) ? state.CPSR | Nflag : state.CPSR & ~Nflag);
+			if (operand != 0 && shift_out < 2)
+			{
+				state.CPSR = (shift_out ? state.CPSR | Cflag : state.CPSR & ~Cflag);
+			}
+
 			setReg(dest_reg, result);
 			break;
 		case 0x4: //ASR
@@ -1322,7 +1341,14 @@ void arm7tdmi::THUMB_ALUOps(uint16_t currentInstruction)
 			if (operand != 0) { shift_out = rotateRight(&input, operand); }
 			result = input;
 	
-			setFlagsLogical(result, shift_out);
+			//setFlagsLogical(result, shift_out);
+			state.CPSR = ((result == 0) ? state.CPSR | Zflag : state.CPSR & ~Zflag);
+			state.CPSR = ((result >> 31) ? state.CPSR | Nflag : state.CPSR & ~Nflag);
+			if (operand != 0 && shift_out < 2)
+			{
+				state.CPSR = (shift_out ? state.CPSR | Cflag : state.CPSR & ~Cflag);
+			}
+
 			setReg(dest_reg, result);
 			break;
 		case 0x8: //TST
@@ -1447,6 +1473,72 @@ void arm7tdmi::THUMB_LoadPCRelative(uint16_t currentInstruction)
 	setReg(dest_reg, value);
 }
 
+void arm7tdmi::THUMB_LoadStoreRegOffset(uint16_t currentInstruction)
+{
+	uint8_t src_dest_reg = (currentInstruction & 0x7);
+	uint8_t base_reg = ((currentInstruction >> 3) & 0x7);
+	uint8_t offset_reg = ((currentInstruction >> 6) & 0x7);
+	uint8_t op = ((currentInstruction >> 10) & 0x3);
+
+	uint32_t value = 0;
+	uint32_t op_addr = getReg(base_reg) + getReg(offset_reg);
+
+	switch (op)
+	{
+		case 0x0: //STR
+			value = getReg(src_dest_reg);
+			Memory->set32(op_addr, value);
+			break;
+		case 0x1: //STRB
+			value = getReg(src_dest_reg);
+			value &= 0xFF;
+			Memory->set8(op_addr, value);
+			break;
+		case 0x2: //LDR
+			value = Memory->get32(op_addr);
+			setReg(src_dest_reg, value);
+			break;
+		case 0x3: //LDRB
+			value = Memory->get8(op_addr);
+			setReg(src_dest_reg, value);
+			break;
+	}
+}
+
+void arm7tdmi::THUMB_LoadStoreSignExtend(uint16_t currentInstruction)
+{
+	uint8_t src_dest_reg = (currentInstruction & 0x7);
+	uint8_t base_reg = ((currentInstruction >> 3) & 0x7);
+	uint8_t offset_reg = ((currentInstruction >> 6) & 0x7);
+	uint8_t op = ((currentInstruction >> 10) & 0x3);
+
+	uint32_t value = 0;
+	uint32_t op_addr = getReg(base_reg) + getReg(offset_reg);
+
+	switch (op)
+	{
+		case 0x0: //STRH
+			value = getReg(src_dest_reg);
+			value &= 0xFFFF;
+			Memory->set16(op_addr, value);
+			break;
+		case 0x1: //LDSB
+			value = Memory->get8(op_addr);
+			if (value & 0x80) { value |= 0xFFFFFF00; }
+			setReg(src_dest_reg, value);
+			break;
+		case 0x2: //LDRH
+			value = Memory->get16(op_addr);
+			setReg(src_dest_reg, value);
+			break;
+		case 0x3: //LDSH
+			value = Memory->get16(op_addr);
+			if (value & 0x8000) { value |= 0xFFFF0000; }
+			setReg(src_dest_reg, value);
+			break;
+	}
+}
+
 void arm7tdmi::THUMB_LoadStoreImmediate(uint16_t currentInstruction)
 {
 	uint8_t src_dest_reg = (currentInstruction & 0x7);
@@ -1486,6 +1578,96 @@ void arm7tdmi::THUMB_LoadStoreImmediate(uint16_t currentInstruction)
 			setReg(src_dest_reg, value);
 			break;
 	}
+}
+
+void arm7tdmi::THUMB_LoadStoreHalfword(uint16_t currentInstruction)
+{
+	uint8_t src_dest_reg = (currentInstruction & 0x7);
+	uint8_t base_reg = ((currentInstruction >> 3) & 0x7);
+	uint16_t offset = ((currentInstruction >> 6) & 0x1F);
+	bool op = (currentInstruction & 0x800);
+
+	uint32_t value = 0;
+	uint32_t op_addr = getReg(base_reg);
+
+	offset <<= 1;
+	op_addr += offset;
+
+	if (op) //LDRH
+	{
+		value = Memory->get16(op_addr);
+		setReg(src_dest_reg, value);
+	}
+	else //STRH
+	{
+		value = getReg(src_dest_reg);
+		Memory->set16(op_addr, value);
+	}
+}
+
+void arm7tdmi::THUMB_LoadStoreSPRelative(uint16_t currentInstruction)
+{
+	uint16_t offset = (currentInstruction & 0xFF);
+	uint8_t src_dest_reg = ((currentInstruction >> 8) & 0x7);
+	uint8_t op = (currentInstruction & 0x800) ? 1 : 0;
+
+	uint32_t value = 0;
+	uint32_t op_addr = getReg(13);
+
+	offset <<= 2;
+	op_addr += offset;
+
+	switch (op)
+	{
+		case 0x0: //STR
+			value = getReg(src_dest_reg);
+			Memory->set32(op_addr, value);
+			break;
+		case 0x1: //LDR
+			value = Memory->get32(op_addr);
+			setReg(src_dest_reg, value);
+			break;
+	}
+}
+
+void arm7tdmi::THUMB_LoadAddress(uint16_t currentInstruction)
+{
+	uint16_t offset = (currentInstruction & 0xFF);
+	uint8_t dest_reg = ((currentInstruction >> 8) & 0x7);
+	bool op = (currentInstruction & 0x800);
+
+	uint32_t value = 0;
+	offset <<= 2;
+
+	if (op) //Rd = SP + nn
+	{
+		value = getReg(13) + offset;
+		setReg(dest_reg, value);
+	}
+	else //Rd = PC + nn
+	{
+		value = (getReg(15) & ~0x2) + offset;
+		setReg(dest_reg, value);
+	}
+}
+
+void arm7tdmi::THUMB_AddOffsetSP(uint16_t currentInstruction)
+{
+	uint16_t offset = (currentInstruction & 0x7F);
+	bool op = (currentInstruction & 0x80);
+	offset <<= 2;
+
+	uint32_t r13 = getReg(13);
+
+	if (op) //SP = SP - nn
+	{
+		r13 -= offset;
+	}
+	else //SP = SP + nn
+	{
+		r13 += offset;
+	}
+	setReg(13, r13);
 }
 
 void arm7tdmi::THUMB_PushPop(uint16_t currentInstruction)
@@ -1732,6 +1914,14 @@ void arm7tdmi::THUMB_ConditionalBranch(uint16_t currentInstruction)
 	{
 		setReg(15, getReg(15) + jump_addr);
 	}
+}
+
+void arm7tdmi::THUMB_UnconditionalBranch(uint16_t currentInstruction)
+{
+	uint16_t offset = (currentInstruction & 0x7FF);
+	int16_t jump_addr = 0;
+	jump_addr = helpers::signExtend((uint16_t)offset, 11) << 1;
+	setReg(15, getReg(15) + jump_addr);
 }
 
 void arm7tdmi::THUMB_LongBranchLink(uint16_t currentInstruction)

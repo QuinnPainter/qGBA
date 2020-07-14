@@ -10,8 +10,8 @@ memory::memory(uint8_t* rom, uint32_t romSize, gpu* GPU, input* Input)
 	this->Input = Input;
 	iwram = new uint8_t[32768];
 	ewram = new uint8_t[262144];
-	memset(iwram, 0, sizeof(iwram));
-	memset(ewram, 0, sizeof(ewram));
+	memset(iwram, 0, 32768);
+	memset(ewram, 0, 262144);
 }
 
 memory::~memory()
