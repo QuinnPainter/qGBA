@@ -21,6 +21,7 @@ class gpu
 		gpu();
 		~gpu();
 		void step(int cycles);
+		void drawScanline();
 		void setVRAM(uint32_t addr, uint8_t value);
 		uint8_t getVRAM(uint32_t addr);
 		void setRegister(uint32_t addr, uint8_t value);

@@ -66,6 +66,10 @@ void gpu::step(int cycles)
 	if (cycleCounter >= cyclesPerScanline)
 	{
 		cycleCounter %= cyclesPerScanline;
+		if (vblank == false)
+		{
+			drawScanline();
+		}
 		currentScanline++;
 		if (currentScanline == vDrawScanlines)
 		{
@@ -77,6 +81,25 @@ void gpu::step(int cycles)
 			vblank = false;
 			currentScanline = 0;
 		}
+	}
+}
+
+void gpu::drawScanline()
+{
+	/*
+	0 - 4   Red Intensity(0 - 31)
+	5 - 9   Green Intensity(0 - 31)
+	10 - 14 Blue Intensity(0 - 31)
+	15    Not used
+	*/
+	for (int i = 0; i < xResolution; i++)
+	{
+		int addr = (currentScanline * xResolution) + i;
+		uint8_t paletteIndex = vram[addr];
+		uint16_t paletteColour = paletteRAM[paletteIndex * 2] | ((uint16_t)paletteRAM[(paletteIndex * 2) + 1] << 8);
+		screenData[addr * 3] = (paletteColour & 0x1F) << 3;
+		screenData[(addr * 3) + 1] = ((paletteColour >> 5) & 0x1F) << 3;
+		screenData[(addr * 3) + 2] = ((paletteColour >> 10) & 0x1F) << 3;
 	}
 }
 
@@ -96,7 +119,7 @@ void gpu::setVRAM(uint32_t addr, uint8_t value)
 	}
 	else
 	{
-		//logging::error("Write to invalid VRAM address: " + helpers::intToHex(addr), "gpu");
+		logging::error("Write to invalid VRAM address: " + helpers::intToHex(addr), "gpu");
 	}
 }
 
@@ -116,7 +139,7 @@ uint8_t gpu::getVRAM(uint32_t addr)
 	}
 	else
 	{
-		//logging::error("Read from invalid VRAM address: " + helpers::intToHex(addr), "gpu");
+		logging::error("Read from invalid VRAM address: " + helpers::intToHex(addr), "gpu");
 		return 0;
 	}
 }
@@ -175,20 +198,6 @@ uint8_t gpu::getRegister(uint32_t addr)
 
 void gpu::displayScreen()
 {
-	/*
-	0 - 4   Red Intensity(0 - 31)
-	5 - 9   Green Intensity(0 - 31)
-	10 - 14 Blue Intensity(0 - 31)
-	15    Not used
-	*/
-	for (int i = 0; i < xResolution * yResolution; i++)
-	{
-		uint8_t paletteIndex = vram[i];
-		uint16_t paletteColour = paletteRAM[paletteIndex * 2] | ((uint16_t)paletteRAM[(paletteIndex * 2) + 1] << 8);
-		screenData[i * 3] = (paletteColour & 0x1F) << 3;
-		screenData[(i * 3) + 1] = ((paletteColour >> 5) & 0x1F) << 3;
-		screenData[(i * 3) + 2] = ((paletteColour >> 10) & 0x1F) << 3;
-	}
 	SDL_UpdateTexture(gpu::screenTexture, NULL, gpu::screenData, xResolution * 3);
 	SDL_RenderCopy(gpu::screenRenderer, gpu::screenTexture, NULL, NULL);
 	SDL_RenderPresent(gpu::screenRenderer);
