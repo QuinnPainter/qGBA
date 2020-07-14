@@ -3,6 +3,7 @@
 #include "arm7tdmi.hpp"
 #include "memory.hpp"
 #include "gpu.hpp"
+#include "input.hpp"
 #include "SDL.h"
 
 int main(int argc, char** argv)
@@ -112,7 +113,8 @@ int main(int argc, char** argv)
 	}
 
 	gpu GPU{};
-	memory mem(rom, romSize, &GPU);
+	input Input{};
+	memory mem(rom, romSize, &GPU, &Input);
 	arm7tdmi CPU(&mem, false);
 
 	bool quit = false;
@@ -131,18 +133,21 @@ int main(int argc, char** argv)
 				}
 				case SDL_KEYDOWN:
 				{
-					//Input.keyChanged(event.key.keysym.sym, 0);
+					Input.keyChanged(event.key.keysym.sym, false);
 					break;
 				}
 				case SDL_KEYUP:
 				{
-					//Input.keyChanged(event.key.keysym.sym, 1);
+					Input.keyChanged(event.key.keysym.sym, true);
 					break;
 				}
 			}
 		}
-		CPU.step();
-		GPU.step(1);
+		for (int i = 0; i < 280896; i++) // Run for one frame
+		{
+			CPU.step();
+			GPU.step(1);
+		}
 	}
 
 	SDL_Quit();

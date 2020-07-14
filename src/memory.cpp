@@ -2,11 +2,12 @@
 #include "logging.hpp"
 #include "helpers.hpp"
 
-memory::memory(uint8_t* rom, uint32_t romSize, gpu* GPU)
+memory::memory(uint8_t* rom, uint32_t romSize, gpu* GPU, input* Input)
 {
 	cartrom = rom;
 	this->romSize = romSize;
 	this->GPU = GPU;
+	this->Input = Input;
 	iwram = new uint8_t[32768];
 	ewram = new uint8_t[262144];
 	memset(iwram, 0, sizeof(iwram));
@@ -70,9 +71,43 @@ uint8_t memory::get8(uint32_t addr)
 		{
 			return GPU->getRegister(addr);
 		}
+		else if (addr < 0x40000B0)
+		{
+			logging::error("Tried to read from sound register: " + helpers::intToHex(addr), "memory");
+			return 0;
+		}
+		else if (addr < 0x4000100)
+		{
+			logging::error("Tried to read from DMA register: " + helpers::intToHex(addr), "memory");
+			return 0;
+		}
+		else if (addr < 0x4000120)
+		{
+			logging::error("Tried to read from timer register: " + helpers::intToHex(addr), "memory");
+			return 0;
+		}
+		else if (addr < 0x4000130)
+		{
+			logging::error("Tried to read from serial area 1: " + helpers::intToHex(addr), "memory");
+			return 0;
+		}
+		else if (addr < 0x4000134)
+		{
+			return Input->getRegister(addr);
+		}
+		else if (addr < 0x4000200)
+		{
+			logging::error("Tried to read from serial area 2: " + helpers::intToHex(addr), "memory");
+			return 0;
+		}
+		else if (addr < 0x4000804)
+		{
+			logging::error("Tried to read from control register: " + helpers::intToHex(addr), "memory");
+			return 0;
+		}
 		else
 		{
-			logging::error("Tried to read from I/O area: " + helpers::intToHex(addr), "memory");
+			logging::error("Tried to read from unused I/O area: " + helpers::intToHex(addr), "memory");
 			return 0;
 		}
 	}
@@ -163,9 +198,37 @@ void memory::set8(uint32_t addr, uint8_t value)
 		{
 			GPU->setRegister(addr, value);
 		}
+		else if (addr < 0x40000B0)
+		{
+			logging::error("Tried to set sound register: " + helpers::intToHex(addr), "memory");
+		}
+		else if (addr < 0x4000100)
+		{
+			logging::error("Tried to set DMA register: " + helpers::intToHex(addr), "memory");
+		}
+		else if (addr < 0x4000120)
+		{
+			logging::error("Tried to set timer register: " + helpers::intToHex(addr), "memory");
+		}
+		else if (addr < 0x4000130)
+		{
+			logging::error("Tried to set serial area 1: " + helpers::intToHex(addr), "memory");
+		}
+		else if (addr < 0x4000134)
+		{
+			Input->setRegister(addr, value);
+		}
+		else if (addr < 0x4000200)
+		{
+			logging::error("Tried to set serial area 2: " + helpers::intToHex(addr), "memory");
+		}
+		else if (addr < 0x4000804)
+		{
+			logging::error("Tried to set control register: " + helpers::intToHex(addr), "memory");
+		}
 		else
 		{
-			logging::error("Tried to write to I/O area: " + helpers::intToHex(addr), "memory");
+			logging::error("Tried to set unused I/O area: " + helpers::intToHex(addr), "memory");
 		}
 	}
 	else if (addr < 0x05000000)

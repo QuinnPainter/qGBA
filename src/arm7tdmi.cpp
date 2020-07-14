@@ -539,7 +539,7 @@ void arm7tdmi::ARM_DataProcessing(uint32_t currentInstruction)
 			shiftAmount = getReg((currentInstruction >> 8) & 0xF);
 		}
 
-		if (!(!shiftImmediate && shiftAmount == 0))
+		if (!(!shiftImmediate && (shiftAmount == 0)))
 		{
 			switch (shiftInfo)
 			{
@@ -648,6 +648,74 @@ void arm7tdmi::ARM_DataProcessing(uint32_t currentInstruction)
 		else
 		{
 			setReg(15, getReg(15) & ~0x3);
+		}
+	}
+}
+
+void arm7tdmi::ARM_PSRTransfer(uint32_t currentInstruction)
+{
+	bool PSR = currentInstruction & 0x400000; //0 = CPSR  1 = SPSR
+	bool immediate = currentInstruction & 0x2000000;
+	bool opcode = currentInstruction & 0x200000;
+
+	if (opcode) // MSR
+	{
+		uint32_t input = 0;
+		uint32_t fieldMask = 0;
+		if (currentInstruction & 0x80000) { fieldMask |= 0xFF000000; }
+		if (currentInstruction & 0x40000) { fieldMask |= 0x00FF0000; }
+		if (currentInstruction & 0x20000) { fieldMask |= 0x0000FF00; }
+		if (currentInstruction & 0x10000) { fieldMask |= 0x000000FF; }
+
+		if (immediate)
+		{
+			input = currentInstruction & 0xFF;
+			uint8_t shift = (currentInstruction >> 8) & 0xF;
+			rotateRightSpecial(&input, shift);
+		}
+		else
+		{
+			uint8_t srcReg = currentInstruction & 0xF;
+			if (srcReg == 15)
+			{
+				logging::error("MSR source register can't be R15", "arm7tdmi");
+			}
+			input = getReg(srcReg);
+			input &= fieldMask;
+		}
+
+		if (PSR)
+		{
+			uint32_t temp = getSPSR();
+			temp &= ~fieldMask;
+			temp |= input;
+			setSPSR(temp);
+		}
+		else
+		{
+			state.CPSR &= ~fieldMask;
+			state.CPSR |= input;
+			if (state.CPSR & 0x20)
+			{
+				// Switch to THUMB
+				setReg(15, getReg(15) & ~0x1); // also flushes pipeline
+			}
+		}
+	}
+	else // MRS (transfer PSR to register)
+	{
+		uint8_t destReg = (currentInstruction >> 12) & 0xF;
+		if (destReg == 15)
+		{
+			logging::error("MRS destination register can't be R15", "arm7tdmi");
+		}
+		if (PSR)
+		{
+			setReg(destReg, getSPSR());
+		}
+		else
+		{
+			setReg(destReg, state.CPSR);
 		}
 	}
 }
@@ -773,74 +841,6 @@ void arm7tdmi::ARM_Multiply(uint32_t currentInstruction)
 			}
 			break;
 		default: logging::error("Multiply: Invalid or unimplemented opcode: " + helpers::intToHex(op_code), "arm7tdmi"); break;
-	}
-}
-
-void arm7tdmi::ARM_PSRTransfer(uint32_t currentInstruction)
-{
-	bool PSR = currentInstruction & 0x400000; //0 = CPSR  1 = SPSR
-	bool immediate = currentInstruction & 0x2000000;
-	bool opcode = currentInstruction & 0x200000;
-
-	if (opcode) // MSR
-	{
-		uint32_t input = 0;
-		uint32_t fieldMask = 0;
-		if (currentInstruction & 0x80000) { fieldMask |= 0xFF000000; }
-		if (currentInstruction & 0x40000) { fieldMask |= 0x00FF0000; }
-		if (currentInstruction & 0x20000) { fieldMask |= 0x0000FF00; }
-		if (currentInstruction & 0x10000) { fieldMask |= 0x000000FF; }
-
-		if (immediate)
-		{
-			input = currentInstruction & 0xFF;
-			uint8_t shift = (currentInstruction >> 8) & 0xF;
-			rotateRightSpecial(&input, shift);
-		}
-		else
-		{
-			uint8_t srcReg = currentInstruction & 0xF;
-			if (srcReg == 15)
-			{
-				logging::error("MSR source register can't be R15", "arm7tdmi");
-			}
-			input = getReg(srcReg);
-			input &= fieldMask;
-		}
-
-		if (PSR)
-		{
-			uint32_t temp = getSPSR();
-			temp &= ~fieldMask;
-			temp |= input;
-			setSPSR(temp);
-		}
-		else
-		{
-			state.CPSR &= ~fieldMask;
-			state.CPSR |= input;
-			if (state.CPSR & 0x20)
-			{
-				// Switch to THUMB
-				setReg(15, getReg(15) & ~0x1); // also flushes pipeline
-			}
-		}
-	}
-	else // MRS (transfer PSR to register)
-	{
-		uint8_t destReg = (currentInstruction >> 12) & 0xF;
-		if (destReg == 15)
-		{
-			logging::error("MRS destination register can't be R15", "arm7tdmi");
-		}
-		if (PSR)
-		{
-			setReg(destReg, getSPSR());
-		}
-		else
-		{
-			setReg(destReg, state.CPSR);
-		}
 	}
 }
 

@@ -79,8 +79,8 @@ class arm7tdmi
 		void ARM_BranchExchange(uint32_t currentInstruction);
 		void ARM_Branch(uint32_t currentInstruction);
 		void ARM_DataProcessing(uint32_t currentInstruction);
-		void ARM_Multiply(uint32_t currentInstruction);
 		void ARM_PSRTransfer(uint32_t currentInstruction);
+		void ARM_Multiply(uint32_t currentInstruction);
 		void ARM_SingleDataTransfer(uint32_t currentInstruction);
 		void ARM_HalfwordDataTransfer(uint32_t currentInstruction);
 		void ARM_BlockDataTransfer(uint32_t currentInstruction);
