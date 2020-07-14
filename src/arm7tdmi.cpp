@@ -327,21 +327,65 @@ void arm7tdmi::decode()
 	{
 		//ARM
 		uint32_t currentInstr = Pipeline.instrPipeline[pipelineIndex];
-		switch ((currentInstr >> 26) & 0b11)
+
+		if (((currentInstr >> 8) & 0xFFFFF) == 0x12FFF)
 		{
-			case 0b00:
+			Pipeline.instrOperation[pipelineIndex] = instruction::ARM_3;
+		}
+		else if (((currentInstr >> 25) & 0x7) == 0x5)
+		{
+			Pipeline.instrOperation[pipelineIndex] = instruction::ARM_4;
+		}
+		else if ((currentInstr & 0xD900000) == 0x1000000)
+		{
+			if ((currentInstr & 0x80) && (currentInstr & 0x10) && ((currentInstr & 0x2000000) == 0))
 			{
-				if ((currentInstr & 0x12FFF10) == 0x12FFF10)
+				if (((currentInstr >> 5) & 0x3) == 0)
 				{
-					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_3;
+					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_12;
 				}
-				else if ((currentInstr & 0x2000000) == 0x2000000 || (currentInstr & 0x80) != 0x80)
+				else
+				{
+					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_10;
+				}
+			}
+			else
+			{
+				// This is ARM6 - PSR Transfer. It's part of ARM5 - Data Processing.
+				Pipeline.instrOperation[pipelineIndex] = instruction::ARM_5;
+			}
+
+		}
+		else if (((currentInstr >> 26) & 0x3) == 0x0)
+		{
+			if ((currentInstr & 0x80) && ((currentInstr & 0x10) == 0))
+			{
+				if (currentInstr & 0x2000000)
 				{
 					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_5;
 				}
-				else if ((currentInstr & 0x60) == 0)
+				else if ((currentInstr & 0x100000) && (((currentInstr >> 23) & 0x3) == 0x2))
 				{
-					if ((currentInstr >> 24) & 1)
+					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_5;
+				}
+				else if (((currentInstr >> 23) & 0x3) != 0x2)
+				{
+					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_5;
+				}
+				else
+				{
+					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_7;
+				}
+			}
+			else if ((currentInstr & 0x80) && (currentInstr & 0x10))
+			{
+				if (((currentInstr >> 4) & 0xF) == 0x9)
+				{
+					if (currentInstr & 0x2000000)
+					{
+						Pipeline.instrOperation[pipelineIndex] = instruction::ARM_5;
+					}
+					else if (((currentInstr >> 23) & 0x3) == 0x2)
 					{
 						Pipeline.instrOperation[pipelineIndex] = instruction::ARM_12;
 					}
@@ -350,41 +394,31 @@ void arm7tdmi::decode()
 						Pipeline.instrOperation[pipelineIndex] = instruction::ARM_7;
 					}
 				}
+				else if (currentInstr & 0x2000000)
+				{
+					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_5;
+				}
 				else
 				{
 					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_10;
 				}
-				break;
 			}
-			case 0b01:
+			else
 			{
-				Pipeline.instrOperation[pipelineIndex] = instruction::ARM_9;
-				break;
+				Pipeline.instrOperation[pipelineIndex] = instruction::ARM_5;
 			}
-			case 0b10:
-			{
-				if ((currentInstr >> 25) & 1)
-				{
-					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_4;
-				}
-				else
-				{
-					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_11;
-				}
-				break;
-			}
-			case 0b11:
-			{
-				if (((currentInstr >> 24) & 0xF) == 0xF)
-				{
-					Pipeline.instrOperation[pipelineIndex] = instruction::ARM_13;
-				}
-				else
-				{
-					// Coprocessor instruction.
-				}
-				break;
-			}
+		}
+		else if (((currentInstr >> 26) & 0x3) == 0x1)
+		{
+			Pipeline.instrOperation[pipelineIndex] = instruction::ARM_9;
+		}
+		else if (((currentInstr >> 25) & 0x7) == 0x4)
+		{
+			Pipeline.instrOperation[pipelineIndex] = instruction::ARM_11;
+		}
+		else if (((currentInstr >> 24) & 0xF) == 0xF)
+		{
+			Pipeline.instrOperation[pipelineIndex] = instruction::ARM_13;
 		}
 	}
 }

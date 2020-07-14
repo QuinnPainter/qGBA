@@ -92,14 +92,21 @@ void gpu::drawScanline()
 	10 - 14 Blue Intensity(0 - 31)
 	15    Not used
 	*/
-	for (int i = 0; i < xResolution; i++)
+	switch (videoMode)
 	{
-		int addr = (currentScanline * xResolution) + i;
-		uint8_t paletteIndex = vram[addr];
-		uint16_t paletteColour = paletteRAM[paletteIndex * 2] | ((uint16_t)paletteRAM[(paletteIndex * 2) + 1] << 8);
-		screenData[addr * 3] = (paletteColour & 0x1F) << 3;
-		screenData[(addr * 3) + 1] = ((paletteColour >> 5) & 0x1F) << 3;
-		screenData[(addr * 3) + 2] = ((paletteColour >> 10) & 0x1F) << 3;
+		case 4:
+		{
+			for (int i = 0; i < xResolution; i++)
+			{
+				int addr = (currentScanline * xResolution) + i;
+				uint8_t paletteIndex = vram[addr];
+				uint16_t paletteColour = paletteRAM[paletteIndex * 2] | ((uint16_t)paletteRAM[(paletteIndex * 2) + 1] << 8);
+				screenData[addr * 3] = (paletteColour & 0x1F) << 3;
+				screenData[(addr * 3) + 1] = ((paletteColour >> 5) & 0x1F) << 3;
+				screenData[(addr * 3) + 2] = ((paletteColour >> 10) & 0x1F) << 3;
+			}
+			break;
+		}
 	}
 }
 
@@ -150,10 +157,7 @@ void gpu::setRegister(uint32_t addr, uint8_t value)
 	{
 		case 0x00: // DISPCNT byte 1
 			videoMode = value & 0x7;
-			if (videoMode != 4)
-			{
-				logging::important("Switched to unimplemented video mode: " + helpers::intToHex(value), "gpu");
-			}
+			logging::important("Switched to video mode: " + helpers::intToHex(value), "gpu");
 			if (videoMode > 5)
 			{
 				logging::fatal("Switched to invalid video mode: " + helpers::intToHex(value), "gpu");
@@ -164,6 +168,12 @@ void gpu::setRegister(uint32_t addr, uint8_t value)
 		case 0x04: // DISPSTAT byte 1
 			break;
 		case 0x05: // DISPSTAT byte 2
+			break;
+		case 0x06: // VCOUNT byte 1
+			logging::error("Write to VCOUNT: 0x4000006", "gpu");
+			break;
+		case 0x07: // VCOUNT byte 2
+			logging::error("Write to VCOUNT: 0x4000007", "gpu");
 			break;
 		default:
 			logging::error("Write to unhandled GPU register: " + helpers::intToHex(addr), "gpu");
@@ -177,8 +187,7 @@ uint8_t gpu::getRegister(uint32_t addr)
 	{
 		case 0x00: // DISPCNT byte 1
 		{
-			uint8_t ret = videoMode & 0x07
-						  | 0x08; // Game Boy Colour mode
+			uint8_t ret = videoMode & 0x07;
 			return ret;
 		}
 		case 0x01: // DISPCNT byte 2
@@ -189,6 +198,10 @@ uint8_t gpu::getRegister(uint32_t addr)
 			return ret;
 		}
 		case 0x05: // DISPSTAT byte 2
+			return 0;
+		case 0x06: // VCOUNT byte 1
+			return currentScanline;
+		case 0x07: // VCOUNT byte 2 (unused)
 			return 0;
 		default:
 			logging::error("Read from unhandled GPU register: " + helpers::intToHex(addr), "gpu");
