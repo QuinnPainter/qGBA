@@ -435,11 +435,11 @@ void arm7tdmi::execute()
 				case instruction::ARM_3: ARM_BranchExchange(currentInstruction); break;
 				case instruction::ARM_4: ARM_Branch(currentInstruction); break;
 				case instruction::ARM_5: ARM_DataProcessing(currentInstruction); break;
-				case instruction::ARM_7: logging::error("Unimplemented ARM instruction: Multiply: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+				case instruction::ARM_7: ARM_Multiply(currentInstruction); break;
 				case instruction::ARM_9: ARM_SingleDataTransfer(currentInstruction); break;
 				case instruction::ARM_10: ARM_HalfwordDataTransfer(currentInstruction); break;
 				case instruction::ARM_11: ARM_BlockDataTransfer(currentInstruction); break;
-				case instruction::ARM_12: logging::error("Unimplemented instruction: Single Data Swap: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+				case instruction::ARM_12: ARM_SingleDataSwap(currentInstruction); break;
 				case instruction::ARM_13: logging::error("Unimplemented instruction: Software Interrupt: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
 				default: logging::fatal("Invalid instruction in ARM pipeline", "arm7tdmi"); break;
 			}
@@ -649,6 +649,130 @@ void arm7tdmi::ARM_DataProcessing(uint32_t currentInstruction)
 		{
 			setReg(15, getReg(15) & ~0x3);
 		}
+	}
+}
+
+void arm7tdmi::ARM_Multiply(uint32_t currentInstruction)
+{
+	uint8_t op_rm_reg = (currentInstruction) & 0xF;
+	uint8_t op_rs_reg = ((currentInstruction >> 8) & 0xF);
+	uint8_t accu_reg = ((currentInstruction >> 12) & 0xF);
+	uint8_t dest_reg = ((currentInstruction >> 16) & 0xF);
+	bool set_condition = (currentInstruction & 0x100000);
+	uint8_t op_code = ((currentInstruction >> 21) & 0xF);
+
+	//Make sure no operand or destination register is R15
+	if (op_rm_reg == 15) { logging::error("Multiply: R15 used as Rm", "arm7tdmi"); }
+	if (op_rs_reg == 15) { logging::error("Multiply: R15 used as Rs", "arm7tdmi"); }
+	if (accu_reg == 15) {  logging::error("Multiply: R15 used as Rn", "arm7tdmi"); }
+	if (dest_reg == 15) {  logging::error("Multiply: R15 used as Rd", "arm7tdmi"); }
+
+	uint32_t Rm = getReg(op_rm_reg);
+	uint32_t Rs = getReg(op_rs_reg);
+	uint32_t Rn = getReg(accu_reg);
+	uint32_t Rd = getReg(dest_reg);
+
+	uint64_t value_64 = 1;
+	uint64_t hi_lo = 0;
+	int64_t value_s64 = 1;
+	uint32_t value_32 = 0;
+
+	switch (op_code)
+	{
+		case 0x0: //MUL
+			value_32 = (Rm * Rs);
+			setReg(dest_reg, value_32);
+
+			if (set_condition)
+			{
+				setFlagsLogical(value_32, 2);
+			}
+			break;
+		case 0x1: //MLA
+			value_32 = (Rm * Rs) + Rn;
+			setReg(dest_reg, value_32);
+
+			if (set_condition)
+			{
+				setFlagsLogical(value_32, 2);
+			}
+			break;
+		case 0x4: //UMULL
+			value_64 = (value_64 * Rm * Rs);
+
+			//Set Rn to low 32-bits, Rd to high 32-bits
+			Rn = (value_64 & 0xFFFFFFFF);
+			Rd = (value_64 >> 32);
+
+			setReg(accu_reg, Rn);
+			setReg(dest_reg, Rd);
+
+			if (set_condition)
+			{
+				state.CPSR = ((value_64 == 0) ? state.CPSR | Zflag : state.CPSR & ~Zflag);
+				state.CPSR = ((value_64 >> 63) ? state.CPSR | Nflag : state.CPSR & ~Nflag);
+			}
+			break;
+		case 0x5: //UMLAL
+			hi_lo = Rd;
+			hi_lo <<= 32;
+			hi_lo |= Rn;
+
+			value_64 = (value_64 * Rm * Rs) + hi_lo;
+
+			//Set Rn to low 32-bits, Rd to high 32-bits
+			Rn = (value_64 & 0xFFFFFFFF);
+			Rd = (value_64 >> 32);
+
+			setReg(accu_reg, Rn);
+			setReg(dest_reg, Rd);
+
+			if (set_condition)
+			{
+				state.CPSR = ((value_64 == 0) ? state.CPSR | Zflag : state.CPSR & ~Zflag);
+				state.CPSR = ((value_64 >> 63) ? state.CPSR | Nflag : state.CPSR & ~Nflag);
+			}
+			break;
+		case 0x6: //SMULL
+			value_s64 = (value_s64 * (int32_t)Rm * (int32_t)Rs);
+			value_64 = value_s64;
+
+			//Set Rn to low 32-bits, Rd to high 32-bits
+			Rn = (value_s64 & 0xFFFFFFFF);
+			Rd = (value_s64 >> 32);
+
+			setReg(accu_reg, Rn);
+			setReg(dest_reg, Rd);
+
+			if (set_condition)
+			{
+				state.CPSR = ((value_s64 == 0) ? state.CPSR | Zflag : state.CPSR & ~Zflag);
+				state.CPSR = ((value_s64 >> 63) ? state.CPSR | Nflag : state.CPSR & ~Nflag);
+			}
+			break;
+		case 0x7: //SMLAL
+			//This looks weird, but it is a workaround for compilers that support 64-bit unsigned ints, but complain about shifts greater than 32
+			hi_lo = Rd;
+			hi_lo <<= 32;
+			hi_lo |= Rn;
+
+			value_s64 = (value_s64 * (int32_t)Rm * (int32_t)Rs) + hi_lo;
+			value_64 = value_s64;
+
+			//Set Rn to low 32-bits, Rd to high 32-bits
+			Rn = (value_s64 & 0xFFFFFFFF);
+			Rd = (value_s64 >> 32);
+
+			setReg(accu_reg, Rn);
+			setReg(dest_reg, Rd);
+
+			if (set_condition)
+			{
+				state.CPSR = ((value_s64 == 0) ? state.CPSR | Zflag : state.CPSR & ~Zflag);
+				state.CPSR = ((value_s64 >> 63) ? state.CPSR | Nflag : state.CPSR & ~Nflag);
+			}
+			break;
+		default: logging::error("Multiply: Invalid or unimplemented opcode: " + helpers::intToHex(op_code), "arm7tdmi"); break;
 	}
 }
 
@@ -997,6 +1121,39 @@ void arm7tdmi::ARM_BlockDataTransfer(uint32_t currentInstruction)
 	}
 
 	//if (psr) { current_cpu_mode = temp_mode; }
+}
+
+void arm7tdmi::ARM_SingleDataSwap(uint32_t currentInstruction)
+{
+	uint8_t src_reg = (currentInstruction & 0xF);
+	uint8_t dest_reg = ((currentInstruction >> 12) & 0xF);
+	uint8_t base_reg = ((currentInstruction >> 16) & 0xF);
+	uint8_t byte_word = (currentInstruction & 0x400000) ? 1 : 0;
+
+	uint32_t base_addr = getReg(base_reg);
+	uint32_t dest_value = 0;
+	uint32_t swap_value = 0;
+
+	if (byte_word == 1) //Swap a single byte
+	{
+		//Grab values before swapping
+		dest_value = Memory->get8(base_addr);
+		swap_value = (getReg(src_reg) & 0xFF);
+
+		//Swap the values
+		Memory->set8(base_addr, swap_value);
+		setReg(dest_reg, dest_value);
+	}
+	else //Swap a single word
+	{
+		//Grab values before swapping
+		dest_value = Memory->get32(base_addr);
+		swap_value = getReg(src_reg);
+
+		//Swap the values
+		Memory->set32(base_addr, swap_value);
+		setReg(dest_reg, dest_value);
+	}
 }
 
 // Thumb instructions

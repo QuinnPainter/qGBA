@@ -3,6 +3,7 @@
 #include "arm7tdmi.hpp"
 #include "memory.hpp"
 #include "gpu.hpp"
+#include "SDL.h"
 
 int main(int argc, char** argv)
 {
@@ -105,17 +106,46 @@ int main(int argc, char** argv)
 	//0xBE and 0xBF - Reserved space (All 0). Doesn't matter.
 	//Rest of the header only matters for multiboot.
 
+	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_AUDIO) != 0)
+	{
+		logging::fatal("SDL Init Error: " + std::string(SDL_GetError()));
+	}
+
 	gpu GPU{};
 	memory mem(rom, romSize, &GPU);
 	arm7tdmi CPU(&mem, false);
 
-	//for (int i = 0; i < 10000; i++)
-	while(true)
+	bool quit = false;
+	SDL_Event event;
+
+	while(!quit)
 	{
+		while (SDL_PollEvent(&event) != 0)
+		{
+			switch (event.type)
+			{
+				case SDL_QUIT:
+				{
+					quit = true;
+					break;
+				}
+				case SDL_KEYDOWN:
+				{
+					//Input.keyChanged(event.key.keysym.sym, 0);
+					break;
+				}
+				case SDL_KEYUP:
+				{
+					//Input.keyChanged(event.key.keysym.sym, 1);
+					break;
+				}
+			}
+		}
 		CPU.step();
 		GPU.step(1);
 	}
 
+	SDL_Quit();
 	delete[] rom;
 	logging::info("Exited successfully", "qGBA");
 	return 0;
