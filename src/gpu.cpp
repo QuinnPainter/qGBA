@@ -121,6 +121,23 @@ void gpu::drawScanline()
 			}
 			break;
 		}
+		case 5:
+		{
+			if (currentScanline >= 128)
+			{
+				break;
+			}
+			for (int i = 0; i < 160; i++)
+			{
+				int addr1 = (currentScanline * 160 * 2) + (i * 2);
+				int addr2 = (currentScanline * xResolution) + i;
+				uint16_t colour = vram[addr1] | ((uint16_t)vram[addr1 + 1] << 8);
+				screenData[addr2 * 3] = (colour & 0x1F) << 3;
+				screenData[(addr2 * 3) + 1] = ((colour >> 5) & 0x1F) << 3;
+				screenData[(addr2 * 3) + 2] = ((colour >> 10) & 0x1F) << 3;
+			}
+			break;
+		}
 	}
 }
 
@@ -180,6 +197,8 @@ void gpu::setRegister(uint32_t addr, uint8_t value)
 			break;
 		case 0x01: // DISPCNT byte 2
 			break;
+		case 0x02: case 0x03: // Green Swap - unimplemented
+			break;
 		case 0x04: // DISPSTAT byte 1
 			break;
 		case 0x05: // DISPSTAT byte 2
@@ -207,6 +226,8 @@ uint8_t gpu::getRegister(uint32_t addr)
 			return ret;
 		}
 		case 0x01: // DISPCNT byte 2
+			return 0;
+		case 0x02: case 0x03: // Green Swap - unimplemented
 			return 0;
 		case 0x04: // DISPSTAT byte 1
 		{
