@@ -1340,7 +1340,7 @@ void arm7tdmi::THUMB_ALUOps(uint16_t currentInstruction)
 			//setFlagsLogical(result, shift_out);
 			state.CPSR = ((result == 0) ? state.CPSR | Zflag : state.CPSR & ~Zflag);
 			state.CPSR = ((result >> 31) ? state.CPSR | Nflag : state.CPSR & ~Nflag);
-			if (operand != 0 && shift_out < 2)
+			if (operand != 0)
 			{
 				state.CPSR = (shift_out ? state.CPSR | Cflag : state.CPSR & ~Cflag);
 			}
@@ -1352,7 +1352,13 @@ void arm7tdmi::THUMB_ALUOps(uint16_t currentInstruction)
 			if (operand != 0) { shift_out = arithmeticShiftRight(&input, operand); }
 			result = input;
 	
-			setFlagsLogical(result, shift_out);
+			//setFlagsLogical(result, shift_out);
+			state.CPSR = ((result == 0) ? state.CPSR | Zflag : state.CPSR & ~Zflag);
+			state.CPSR = ((result >> 31) ? state.CPSR | Nflag : state.CPSR & ~Nflag);
+			if (operand != 0 && shift_out < 2)
+			{
+				state.CPSR = (shift_out ? state.CPSR | Cflag : state.CPSR & ~Cflag);
+			}
 			setReg(dest_reg, result);
 			break;
 		case 0x5: //ADC
@@ -1366,8 +1372,8 @@ void arm7tdmi::THUMB_ALUOps(uint16_t currentInstruction)
 			carry_out ^= 0x1; //Invert carry
 	
 			result = (input - operand - carry_out);
-			setFlagsArithmetic(input, operand + carry_out - 1, result, false);
-			//setFlagsArithmetic(input, operand, result, false);
+			//setFlagsArithmetic(input, operand + carry_out - 1, result, false);
+			setFlagsArithmetic(input, operand, result, false);
 			setReg(dest_reg, result);
 			break;
 		case 0x7: //ROR
@@ -1378,7 +1384,7 @@ void arm7tdmi::THUMB_ALUOps(uint16_t currentInstruction)
 			//setFlagsLogical(result, shift_out);
 			state.CPSR = ((result == 0) ? state.CPSR | Zflag : state.CPSR & ~Zflag);
 			state.CPSR = ((result >> 31) ? state.CPSR | Nflag : state.CPSR & ~Nflag);
-			if (operand != 0 && shift_out < 2)
+			if (operand != 0)
 			{
 				state.CPSR = (shift_out ? state.CPSR | Cflag : state.CPSR & ~Cflag);
 			}
@@ -2024,25 +2030,20 @@ void arm7tdmi::setFlagsArithmetic(uint32_t op1, uint32_t op2, uint32_t result, b
 		state.CPSR = (op2 <= op1) ? state.CPSR | Cflag : state.CPSR & ~Cflag;
 	}
 	//Overflow flag
-	uint32_t subAdjOp2;
-	if (!addition)
-	{
-		subAdjOp2 = (~op2 + 1);
-	}
-	else
-	{
-		subAdjOp2 = op2;
-	}
-	bool op1msb = op1 >> 31;
-	bool op2msb = subAdjOp2 >> 31;
-	bool resultmsb = result >> 31;
-	if ((!op1msb && !op2msb && resultmsb) || (op1msb && op2msb && !resultmsb))
-	{
-		state.CPSR |= Vflag;
-	}
-	else
+	bool input_msb = (op1 & 0x80000000);
+	bool operand_msb = (op2 & 0x80000000);
+	bool result_msb = (result & 0x80000000);
+
+	if (!addition) { operand_msb = !operand_msb; }
+
+	if (input_msb != operand_msb)
 	{
 		state.CPSR &= ~Vflag;
+	}
+	else
+	{
+		if (result_msb == input_msb) { state.CPSR &= ~Vflag; }
+		else { state.CPSR |= Vflag; }
 	}
 }
 
@@ -2051,7 +2052,14 @@ int arm7tdmi::logicalShiftLeft(uint32_t* value, int shiftAmount)
 	if (shiftAmount > 0)
 	{
 		bool carryOut = (1 << (32 - shiftAmount)) & *value;
-		*value <<= shiftAmount;
+		if (shiftAmount >= 32)
+		{
+			*value = 0;
+		}
+		else
+		{
+			*value <<= shiftAmount;
+		}
 		return carryOut;
 	}
 	else
@@ -2066,13 +2074,22 @@ bool arm7tdmi::logicalShiftRight(uint32_t* value, int shiftAmount)
 	if (shiftAmount > 0)
 	{
 		bool carryOut = (1 << (shiftAmount - 1)) & *value;
-		*value >>= shiftAmount;
+
+		if (shiftAmount >= 32)
+		{
+			*value = 0;
+		}
+		else
+		{
+			*value >>= shiftAmount;
+		}
 		return carryOut;
 	}
 	else
 	{
+		bool carryOut = *value & 0x80000000;
 		*value = 0;
-		return *value & 0x80000000;
+		return carryOut;
 	}
 }
 
@@ -2113,7 +2130,7 @@ bool arm7tdmi::rotateRight(uint32_t* value, int shiftAmount)
 		bool carryOut = 0;
 		for (int i = 0; i < shiftAmount; i++)
 		{
-			bool carryOut = *value & 1;
+			carryOut = (*value) & 1;
 			*value >>= 1;
 			*value |= (uint32_t)carryOut << 31;
 		}
