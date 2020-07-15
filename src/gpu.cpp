@@ -129,7 +129,8 @@ void gpu::drawScanline()
 			}
 			for (int i = 0; i < 160; i++)
 			{
-				int addr1 = (currentScanline * 160 * 2) + (i * 2);
+				int frame = bitmapFrame ? 0xA000 : 0;
+				int addr1 = (currentScanline * 160 * 2) + (i * 2) + frame;
 				int addr2 = (currentScanline * xResolution) + i;
 				uint16_t colour = vram[addr1] | ((uint16_t)vram[addr1 + 1] << 8);
 				screenData[addr2 * 3] = (colour & 0x1F) << 3;
