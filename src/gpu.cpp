@@ -94,6 +94,19 @@ void gpu::drawScanline()
 	*/
 	switch (videoMode)
 	{
+		case 3:
+		{
+			for (int i = 0; i < xResolution; i++)
+			{
+				int addr1 = (currentScanline * xResolution * 2) + (i * 2);
+				int addr2 = (currentScanline * xResolution) + i;
+				uint16_t colour = vram[addr1] | ((uint16_t)vram[addr1 + 1] << 8);
+				screenData[addr2 * 3] = (colour & 0x1F) << 3;
+				screenData[(addr2 * 3) + 1] = ((colour >> 5) & 0x1F) << 3;
+				screenData[(addr2 * 3) + 2] = ((colour >> 10) & 0x1F) << 3;
+			}
+			break;
+		}
 		case 4:
 		{
 			for (int i = 0; i < xResolution; i++)
