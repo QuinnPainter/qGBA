@@ -2,10 +2,11 @@
 #include "logging.hpp"
 #include "helpers.hpp"
 
-memory::memory(uint8_t* rom, uint32_t romSize, gpu* GPU, input* Input)
+memory::memory(uint8_t* rom, uint32_t romSize, uint8_t* bios, gpu* GPU, input* Input)
 {
 	cartrom = rom;
 	this->romSize = romSize;
+	this->bios = bios;
 	this->GPU = GPU;
 	this->Input = Input;
 	iwram = new uint8_t[32768];
@@ -37,7 +38,11 @@ uint8_t memory::get8(uint32_t addr)
 {
 	if (addr < 0x4000)
 	{
-		logging::error("Tried to access BIOS area: " + helpers::intToHex(addr), "memory");
+		if (bios != nullptr)
+		{
+			return bios[addr];
+		}
+		//logging::error("Tried to access BIOS area: " + helpers::intToHex(addr), "memory");
 		return 0;
 	}
 	else if (addr < 0x02000000)
@@ -73,7 +78,7 @@ uint8_t memory::get8(uint32_t addr)
 		}
 		else if (addr < 0x40000B0)
 		{
-			logging::error("Tried to read from sound register: " + helpers::intToHex(addr), "memory");
+			//logging::error("Tried to read from sound register: " + helpers::intToHex(addr), "memory");
 			return 0;
 		}
 		else if (addr < 0x4000100)
@@ -200,7 +205,7 @@ void memory::set8(uint32_t addr, uint8_t value)
 		}
 		else if (addr < 0x40000B0)
 		{
-			logging::error("Tried to set sound register: " + helpers::intToHex(addr), "memory");
+			//logging::error("Tried to set sound register: " + helpers::intToHex(addr), "memory");
 		}
 		else if (addr < 0x4000100)
 		{

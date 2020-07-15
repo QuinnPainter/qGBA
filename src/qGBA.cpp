@@ -26,7 +26,31 @@ int main(int argc, char** argv)
 	uint8_t* rom = new uint8_t[romSize];
 	fread(rom, romSize, 1, romFile);
 	fclose(romFile);
-	logging::info("Opened " + std::string(argv[1]), "qGBA");
+	logging::info("Opened ROM: " + std::string(argv[1]), "qGBA");
+
+	//Read the BIOS file
+	uint8_t* bios = nullptr;
+	if (argc > 2)
+	{
+		FILE* biosFile = fopen(argv[2], "rb");
+		if (!biosFile)
+		{
+			logging::fatal("Couldn't open " + std::string(argv[2]), "qGBA");
+		}
+		//Get the file size
+		fseek(biosFile, 0, SEEK_END);
+		unsigned int biosSize = ftell(biosFile);
+		fseek(biosFile, 0, SEEK_SET);
+		if (biosSize != 0x4000)
+		{
+			logging::fatal("BIOS file is incorrect size: " + std::to_string(biosSize) + " bytes");
+		}
+		//Copy the bios into memory
+		bios = new uint8_t[biosSize];
+		fread(bios, biosSize, 1, biosFile);
+		fclose(biosFile);
+		logging::info("Opened BIOS: " + std::string(argv[2]), "qGBA");
+	}
 
 	//Read the ROM header
 	uint8_t ninLogo[156] = {
@@ -111,11 +135,12 @@ int main(int argc, char** argv)
 	{
 		logging::fatal("SDL Init Error: " + std::string(SDL_GetError()));
 	}
+	bool biosGiven = bios != nullptr;
 
 	gpu GPU{};
 	input Input{};
-	memory mem(rom, romSize, &GPU, &Input);
-	arm7tdmi CPU(&mem, false);
+	memory mem(rom, romSize, bios, &GPU, &Input);
+	arm7tdmi CPU(&mem, biosGiven);
 
 	bool quit = false;
 	SDL_Event event;
@@ -151,6 +176,10 @@ int main(int argc, char** argv)
 	}
 
 	SDL_Quit();
+	if (bios != nullptr)
+	{
+		delete[] bios;
+	}
 	delete[] rom;
 	logging::info("Exited successfully", "qGBA");
 	return 0;

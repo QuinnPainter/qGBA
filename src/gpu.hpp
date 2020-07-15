@@ -16,6 +16,7 @@ class gpu
 		uint8_t* vram;
 		uint8_t* objectRAM;
 		uint8_t videoMode;
+		bool bitmapFrame;
 		bool vblank;
 	public:
 		gpu();

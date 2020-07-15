@@ -112,7 +112,8 @@ void gpu::drawScanline()
 			for (int i = 0; i < xResolution; i++)
 			{
 				int addr = (currentScanline * xResolution) + i;
-				uint8_t paletteIndex = vram[addr];
+				int frame = bitmapFrame ? 0xA000 : 0;
+				uint8_t paletteIndex = vram[addr + frame];
 				uint16_t paletteColour = paletteRAM[paletteIndex * 2] | ((uint16_t)paletteRAM[(paletteIndex * 2) + 1] << 8);
 				screenData[addr * 3] = (paletteColour & 0x1F) << 3;
 				screenData[(addr * 3) + 1] = ((paletteColour >> 5) & 0x1F) << 3;
@@ -135,7 +136,7 @@ void gpu::setVRAM(uint32_t addr, uint8_t value)
 	}
 	else if (addr >= 0x07000000 && addr < 0x07000400)
 	{
-		objectRAM[addr - 07000000] = value;
+		objectRAM[addr - 0x07000000] = value;
 	}
 	else
 	{
@@ -170,11 +171,12 @@ void gpu::setRegister(uint32_t addr, uint8_t value)
 	{
 		case 0x00: // DISPCNT byte 1
 			videoMode = value & 0x7;
-			logging::important("Switched to video mode: " + helpers::intToHex(value), "gpu");
+			logging::important("Switched to video mode: " + helpers::intToHex(videoMode), "gpu");
 			if (videoMode > 5)
 			{
-				logging::fatal("Switched to invalid video mode: " + helpers::intToHex(value), "gpu");
+				logging::fatal("Switched to invalid video mode: " + helpers::intToHex(videoMode), "gpu");
 			}
+			bitmapFrame = value & 0x10;
 			break;
 		case 0x01: // DISPCNT byte 2
 			break;
@@ -200,7 +202,8 @@ uint8_t gpu::getRegister(uint32_t addr)
 	{
 		case 0x00: // DISPCNT byte 1
 		{
-			uint8_t ret = videoMode & 0x07;
+			uint8_t ret = videoMode & 0x07
+							| (uint8_t)bitmapFrame << 4;
 			return ret;
 		}
 		case 0x01: // DISPCNT byte 2
