@@ -108,6 +108,14 @@ void gpu::drawScanline()
 					uint32_t tileAddr = tileBaseAddr + ((mapEntry & 0x3FF) * (BG0Control.colourDepth ? 64 : 32));
 					uint8_t tileRow = currentScanline % 8;
 					uint8_t tileColumn = x % 8;
+					if (mapEntry & 0x400) // Horizontal Flip
+					{
+						tileColumn = 7 - tileColumn;
+					}
+					if (mapEntry & 0x800) // Vertical flip
+					{
+						tileRow = 7 - tileRow;
+					}
 					if (BG0Control.colourDepth) // 256 colours, 1 palette.
 					{
 						uint8_t pixelEntryAddr = (tileRow * 8) + tileColumn;
