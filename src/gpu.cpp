@@ -98,16 +98,60 @@ void gpu::drawScanline()
 		{
 			if (enableBG0)
 			{
+				int mapXSize = (BG0Control.screenSize & 0x01) ? 512 : 256;
+				int mapYSize = (BG0Control.screenSize & 0x10) ? 512 : 256;
 				for (int x = 0; x < xResolution; x++)
 				{
+					int adjustedX = (x + BG0XOffset) & 0x1FF;
+					int adjustedY = (currentScanline + BG0YOffset) & 0x1FF;
 					uint32_t mapBaseAddr = (uint32_t)BG0Control.screenBaseBlock << 11;
-					uint32_t mapEntryAddr = mapBaseAddr + ((x / 8) * 2) + ((currentScanline / 8) * 32 * 2);
+
+					bool xOverflow = adjustedX >= 256;
+					bool yOverflow = adjustedY >= 256;
+					switch (BG0Control.screenSize)
+					{
+						case 0x1:
+							if (xOverflow)
+							{
+								// we're in screenblock 1
+								mapBaseAddr += 2048;
+							}
+							break;
+						case 0x2:
+							if (yOverflow)
+							{
+								// we're in screenblock 1
+								mapBaseAddr += 2048;
+							}
+							break;
+						case 0x3:
+							if (xOverflow && yOverflow)
+							{
+								// we're in screenblock 3
+								mapBaseAddr += 2048 * 3;
+							}
+							else if (xOverflow)
+							{
+								// we're in screenblock 1
+								mapBaseAddr += 2048;
+							}
+							else if (yOverflow)
+							{
+								// we're in screenblock 2
+								mapBaseAddr += 2048 * 2;
+							}
+							break;
+					}
+					adjustedX %= 256;
+					adjustedY %= 256;
+
+					uint32_t mapEntryAddr = mapBaseAddr + ((adjustedX / 8) * 2) + ((adjustedY / 8) * 32 * 2);
 					uint16_t mapEntry = vram[mapEntryAddr] | (((uint16_t)vram[mapEntryAddr + 1]) << 8);
 
 					uint32_t tileBaseAddr = (uint32_t)BG0Control.charBaseBlock << 14;
 					uint32_t tileAddr = tileBaseAddr + ((mapEntry & 0x3FF) * (BG0Control.colourDepth ? 64 : 32));
-					uint8_t tileRow = currentScanline % 8;
-					uint8_t tileColumn = x % 8;
+					uint8_t tileRow = adjustedY % 8;
+					uint8_t tileColumn = adjustedX % 8;
 					if (mapEntry & 0x400) // Horizontal Flip
 					{
 						tileColumn = 7 - tileColumn;
@@ -119,13 +163,9 @@ void gpu::drawScanline()
 					if (BG0Control.colourDepth) // 256 colours, 1 palette.
 					{
 						uint8_t pixelEntryAddr = (tileRow * 8) + tileColumn;
-						uint8_t pixelEntry = vram[tileAddr + pixelEntryAddr];
-						uint16_t paletteEntryAddr = pixelEntry;
-						uint16_t paletteColour = paletteRAM[paletteEntryAddr * 2] | ((uint16_t)paletteRAM[(paletteEntryAddr * 2) + 1] << 8);
-						int addr = (currentScanline * xResolution) + x;
-						screenData[addr * 3] = (paletteColour & 0x1F) << 3;
-						screenData[(addr * 3) + 1] = ((paletteColour >> 5) & 0x1F) << 3;
-						screenData[(addr * 3) + 2] = ((paletteColour >> 10) & 0x1F) << 3;
+						uint16_t pixelEntry = vram[tileAddr + pixelEntryAddr];
+						uint16_t paletteColour = paletteRAM[pixelEntry * 2] | ((uint16_t)paletteRAM[(pixelEntry * 2) + 1] << 8);
+						plotPixel(x, currentScanline, paletteColour);
 					}
 					else // 16 colours, 16 palettes.
 					{
@@ -143,10 +183,7 @@ void gpu::drawScanline()
 							paletteEntryAddr += pixelEntry & 0xF;
 						}
 						uint16_t paletteColour = paletteRAM[paletteEntryAddr * 2] | ((uint16_t)paletteRAM[(paletteEntryAddr * 2) + 1] << 8);
-						int addr = (currentScanline * xResolution) + x;
-						screenData[addr * 3] = (paletteColour & 0x1F) << 3;
-						screenData[(addr * 3) + 1] = ((paletteColour >> 5) & 0x1F) << 3;
-						screenData[(addr * 3) + 2] = ((paletteColour >> 10) & 0x1F) << 3;
+						plotPixel(x, currentScanline, paletteColour);
 					}
 				}
 			}
@@ -158,12 +195,9 @@ void gpu::drawScanline()
 			{
 				for (int x = 0; x < xResolution; x++)
 				{
-					int addr1 = (currentScanline * xResolution * 2) + (x * 2);
-					int addr2 = (currentScanline * xResolution) + x;
-					uint16_t colour = vram[addr1] | ((uint16_t)vram[addr1 + 1] << 8);
-					screenData[addr2 * 3] = (colour & 0x1F) << 3;
-					screenData[(addr2 * 3) + 1] = ((colour >> 5) & 0x1F) << 3;
-					screenData[(addr2 * 3) + 2] = ((colour >> 10) & 0x1F) << 3;
+					int addr = (currentScanline * xResolution * 2) + (x * 2);
+					uint16_t colour = vram[addr] | ((uint16_t)vram[addr + 1] << 8);
+					plotPixel(x, currentScanline, colour);
 				}
 			}
 			break;
@@ -174,13 +208,10 @@ void gpu::drawScanline()
 			{
 				for (int x = 0; x < xResolution; x++)
 				{
-					int addr = (currentScanline * xResolution) + x;
-					int frame = bitmapFrame ? 0xA000 : 0;
-					uint8_t paletteIndex = vram[addr + frame];
+					int addr = (currentScanline * xResolution) + x + (bitmapFrame ? 0xA000 : 0);
+					uint8_t paletteIndex = vram[addr];
 					uint16_t paletteColour = paletteRAM[paletteIndex * 2] | ((uint16_t)paletteRAM[(paletteIndex * 2) + 1] << 8);
-					screenData[addr * 3] = (paletteColour & 0x1F) << 3;
-					screenData[(addr * 3) + 1] = ((paletteColour >> 5) & 0x1F) << 3;
-					screenData[(addr * 3) + 2] = ((paletteColour >> 10) & 0x1F) << 3;
+					plotPixel(x, currentScanline, paletteColour);
 				}
 			}
 			break;
@@ -196,17 +227,22 @@ void gpu::drawScanline()
 				for (int x = 0; x < 160; x++)
 				{
 					int frame = bitmapFrame ? 0xA000 : 0;
-					int addr1 = (currentScanline * 160 * 2) + (x * 2) + frame;
-					int addr2 = (currentScanline * xResolution) + x;
-					uint16_t colour = vram[addr1] | ((uint16_t)vram[addr1 + 1] << 8);
-					screenData[addr2 * 3] = (colour & 0x1F) << 3;
-					screenData[(addr2 * 3) + 1] = ((colour >> 5) & 0x1F) << 3;
-					screenData[(addr2 * 3) + 2] = ((colour >> 10) & 0x1F) << 3;
+					int addr = (currentScanline * 160 * 2) + (x * 2) + frame;
+					uint16_t colour = vram[addr] | ((uint16_t)vram[addr + 1] << 8);
+					plotPixel(x, currentScanline, colour);
 				}
 			}
 			break;
 		}
 	}
+}
+
+void gpu::plotPixel(uint8_t x, uint8_t y, uint16_t colour)
+{
+	int addr = (y * xResolution) + x;
+	screenData[addr * 3] = (colour & 0x1F) << 3;
+	screenData[(addr * 3) + 1] = ((colour >> 5) & 0x1F) << 3;
+	screenData[(addr * 3) + 2] = ((colour >> 10) & 0x1F) << 3;
 }
 
 void gpu::setVRAM(uint32_t addr, uint8_t value)

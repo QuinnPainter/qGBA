@@ -51,11 +51,13 @@ class gpu
 		uint16_t BG3XOffset;
 		uint16_t BG3YOffset;
 		bool vblank;
+
+		void drawScanline();
+		void plotPixel(uint8_t x, uint8_t y, uint16_t colour);
 	public:
 		gpu();
 		~gpu();
 		void step(int cycles);
-		void drawScanline();
 		void setVRAM(uint32_t addr, uint8_t value);
 		uint8_t getVRAM(uint32_t addr);
 		void setRegister(uint32_t addr, uint8_t value);
