@@ -94,30 +94,86 @@ void gpu::drawScanline()
 	*/
 	switch (videoMode)
 	{
+		case 0:
+		{
+			if (enableBG0)
+			{
+				for (int x = 0; x < xResolution; x++)
+				{
+					uint32_t mapBaseAddr = (uint32_t)BG0Control.screenBaseBlock << 11;
+					uint32_t mapEntryAddr = mapBaseAddr + ((x / 8) * 2) + ((currentScanline / 8) * 32 * 2);
+					uint16_t mapEntry = vram[mapEntryAddr] | (((uint16_t)vram[mapEntryAddr + 1]) << 8);
+
+					uint32_t tileBaseAddr = (uint32_t)BG0Control.charBaseBlock << 14;
+					uint32_t tileAddr = tileBaseAddr + ((mapEntry & 0x3FF) * (BG0Control.colourDepth ? 64 : 32));
+					uint8_t tileRow = currentScanline % 8;
+					uint8_t tileColumn = x % 8;
+					if (BG0Control.colourDepth) // 256 colours, 1 palette.
+					{
+						uint8_t pixelEntryAddr = (tileRow * 8) + tileColumn;
+						uint8_t pixelEntry = vram[tileAddr + pixelEntryAddr];
+						uint16_t paletteEntryAddr = pixelEntry;
+						uint16_t paletteColour = paletteRAM[paletteEntryAddr * 2] | ((uint16_t)paletteRAM[(paletteEntryAddr * 2) + 1] << 8);
+						int addr = (currentScanline * xResolution) + x;
+						screenData[addr * 3] = (paletteColour & 0x1F) << 3;
+						screenData[(addr * 3) + 1] = ((paletteColour >> 5) & 0x1F) << 3;
+						screenData[(addr * 3) + 2] = ((paletteColour >> 10) & 0x1F) << 3;
+					}
+					else // 16 colours, 16 palettes.
+					{
+						uint8_t paletteNum = mapEntry >> 12;
+						uint16_t paletteBaseAddr = paletteNum * 16;
+						uint16_t paletteEntryAddr = paletteBaseAddr;
+						uint8_t pixelEntryAddr = (tileRow * 4) + tileColumn / 2;
+						uint8_t pixelEntry = vram[tileAddr + pixelEntryAddr];
+						if (tileColumn & 1)
+						{
+							paletteEntryAddr += pixelEntry >> 4;
+						}
+						else
+						{
+							paletteEntryAddr += pixelEntry & 0xF;
+						}
+						uint16_t paletteColour = paletteRAM[paletteEntryAddr * 2] | ((uint16_t)paletteRAM[(paletteEntryAddr * 2) + 1] << 8);
+						int addr = (currentScanline * xResolution) + x;
+						screenData[addr * 3] = (paletteColour & 0x1F) << 3;
+						screenData[(addr * 3) + 1] = ((paletteColour >> 5) & 0x1F) << 3;
+						screenData[(addr * 3) + 2] = ((paletteColour >> 10) & 0x1F) << 3;
+					}
+				}
+			}
+			break;
+		}
 		case 3:
 		{
-			for (int i = 0; i < xResolution; i++)
+			if (enableBG2)
 			{
-				int addr1 = (currentScanline * xResolution * 2) + (i * 2);
-				int addr2 = (currentScanline * xResolution) + i;
-				uint16_t colour = vram[addr1] | ((uint16_t)vram[addr1 + 1] << 8);
-				screenData[addr2 * 3] = (colour & 0x1F) << 3;
-				screenData[(addr2 * 3) + 1] = ((colour >> 5) & 0x1F) << 3;
-				screenData[(addr2 * 3) + 2] = ((colour >> 10) & 0x1F) << 3;
+				for (int x = 0; x < xResolution; x++)
+				{
+					int addr1 = (currentScanline * xResolution * 2) + (x * 2);
+					int addr2 = (currentScanline * xResolution) + x;
+					uint16_t colour = vram[addr1] | ((uint16_t)vram[addr1 + 1] << 8);
+					screenData[addr2 * 3] = (colour & 0x1F) << 3;
+					screenData[(addr2 * 3) + 1] = ((colour >> 5) & 0x1F) << 3;
+					screenData[(addr2 * 3) + 2] = ((colour >> 10) & 0x1F) << 3;
+				}
 			}
 			break;
 		}
 		case 4:
 		{
-			for (int i = 0; i < xResolution; i++)
+			if (enableBG2)
 			{
-				int addr = (currentScanline * xResolution) + i;
-				int frame = bitmapFrame ? 0xA000 : 0;
-				uint8_t paletteIndex = vram[addr + frame];
-				uint16_t paletteColour = paletteRAM[paletteIndex * 2] | ((uint16_t)paletteRAM[(paletteIndex * 2) + 1] << 8);
-				screenData[addr * 3] = (paletteColour & 0x1F) << 3;
-				screenData[(addr * 3) + 1] = ((paletteColour >> 5) & 0x1F) << 3;
-				screenData[(addr * 3) + 2] = ((paletteColour >> 10) & 0x1F) << 3;
+				for (int x = 0; x < xResolution; x++)
+				{
+					int addr = (currentScanline * xResolution) + x;
+					int frame = bitmapFrame ? 0xA000 : 0;
+					uint8_t paletteIndex = vram[addr + frame];
+					uint16_t paletteColour = paletteRAM[paletteIndex * 2] | ((uint16_t)paletteRAM[(paletteIndex * 2) + 1] << 8);
+					screenData[addr * 3] = (paletteColour & 0x1F) << 3;
+					screenData[(addr * 3) + 1] = ((paletteColour >> 5) & 0x1F) << 3;
+					screenData[(addr * 3) + 2] = ((paletteColour >> 10) & 0x1F) << 3;
+				}
 			}
 			break;
 		}
@@ -127,15 +183,18 @@ void gpu::drawScanline()
 			{
 				break;
 			}
-			for (int i = 0; i < 160; i++)
+			if (enableBG2)
 			{
-				int frame = bitmapFrame ? 0xA000 : 0;
-				int addr1 = (currentScanline * 160 * 2) + (i * 2) + frame;
-				int addr2 = (currentScanline * xResolution) + i;
-				uint16_t colour = vram[addr1] | ((uint16_t)vram[addr1 + 1] << 8);
-				screenData[addr2 * 3] = (colour & 0x1F) << 3;
-				screenData[(addr2 * 3) + 1] = ((colour >> 5) & 0x1F) << 3;
-				screenData[(addr2 * 3) + 2] = ((colour >> 10) & 0x1F) << 3;
+				for (int x = 0; x < 160; x++)
+				{
+					int frame = bitmapFrame ? 0xA000 : 0;
+					int addr1 = (currentScanline * 160 * 2) + (x * 2) + frame;
+					int addr2 = (currentScanline * xResolution) + x;
+					uint16_t colour = vram[addr1] | ((uint16_t)vram[addr1 + 1] << 8);
+					screenData[addr2 * 3] = (colour & 0x1F) << 3;
+					screenData[(addr2 * 3) + 1] = ((colour >> 5) & 0x1F) << 3;
+					screenData[(addr2 * 3) + 2] = ((colour >> 10) & 0x1F) << 3;
+				}
 			}
 			break;
 		}
@@ -197,6 +256,11 @@ void gpu::setRegister(uint32_t addr, uint8_t value)
 			bitmapFrame = value & 0x10;
 			break;
 		case 0x01: // DISPCNT byte 2
+			enableBG0 = value & 0b00001;
+			enableBG1 = value & 0b00010;
+			enableBG2 = value & 0b00100;
+			enableBG3 = value & 0b01000;
+			enableOBJ = value & 0b10000;
 			break;
 		case 0x02: case 0x03: // Green Swap - unimplemented
 			break;
@@ -210,6 +274,30 @@ void gpu::setRegister(uint32_t addr, uint8_t value)
 		case 0x07: // VCOUNT byte 2
 			logging::error("Write to VCOUNT: 0x4000007", "gpu");
 			break;
+		case 0x08: BG0Control.setLow(value); break;
+		case 0x09: BG0Control.setHigh(value); break;
+		case 0x0A: BG1Control.setLow(value); break;
+		case 0x0B: BG1Control.setHigh(value); break;
+		case 0x0C: BG2Control.setLow(value); break;
+		case 0x0D: BG2Control.setHigh(value); break;
+		case 0x0E: BG3Control.setLow(value); break;
+		case 0x0F: BG3Control.setHigh(value); break;
+		case 0x10: BG0XOffset = (BG0XOffset & ~0xFF) | value; break;
+		case 0x11: BG0XOffset = (BG0XOffset & 0xFF) | (((uint16_t)value & 0x1) << 8); break;
+		case 0x12: BG0YOffset = (BG0YOffset & ~0xFF) | value; break;
+		case 0x13: BG0YOffset = (BG0YOffset & 0xFF) | (((uint16_t)value & 0x1) << 8); break;
+		case 0x14: BG1XOffset = (BG1XOffset & ~0xFF) | value; break;
+		case 0x15: BG1XOffset = (BG1XOffset & 0xFF) | (((uint16_t)value & 0x1) << 8); break;
+		case 0x16: BG1YOffset = (BG1YOffset & ~0xFF) | value; break;
+		case 0x17: BG1YOffset = (BG1YOffset & 0xFF) | (((uint16_t)value & 0x1) << 8); break;
+		case 0x18: BG2XOffset = (BG2XOffset & ~0xFF) | value; break;
+		case 0x19: BG2XOffset = (BG2XOffset & 0xFF) | (((uint16_t)value & 0x1) << 8); break;
+		case 0x1A: BG2YOffset = (BG2YOffset & ~0xFF) | value; break;
+		case 0x1B: BG2YOffset = (BG2YOffset & 0xFF) | (((uint16_t)value & 0x1) << 8); break;
+		case 0x1C: BG3XOffset = (BG3XOffset & ~0xFF) | value; break;
+		case 0x1D: BG3XOffset = (BG3XOffset & 0xFF) | (((uint16_t)value & 0x1) << 8); break;
+		case 0x1E: BG3YOffset = (BG3YOffset & ~0xFF) | value; break;
+		case 0x1F: BG3YOffset = (BG3YOffset & 0xFF) | (((uint16_t)value & 0x1) << 8); break;
 		default:
 			logging::error("Write to unhandled GPU register: " + helpers::intToHex(addr), "gpu");
 			break;
@@ -222,12 +310,19 @@ uint8_t gpu::getRegister(uint32_t addr)
 	{
 		case 0x00: // DISPCNT byte 1
 		{
-			uint8_t ret = videoMode & 0x07
-							| (uint8_t)bitmapFrame << 4;
+			uint8_t ret = (videoMode & 0x07)
+				| ((uint8_t)bitmapFrame << 4);
 			return ret;
 		}
 		case 0x01: // DISPCNT byte 2
-			return 0;
+		{
+			uint8_t ret = (uint8_t)enableBG0
+				| ((uint8_t)enableBG1 << 1)
+				| ((uint8_t)enableBG2 << 2)
+				| ((uint8_t)enableBG3 << 3)
+				| ((uint8_t)enableOBJ << 4);
+			return ret;
+		}
 		case 0x02: case 0x03: // Green Swap - unimplemented
 			return 0;
 		case 0x04: // DISPSTAT byte 1
@@ -241,6 +336,17 @@ uint8_t gpu::getRegister(uint32_t addr)
 			return currentScanline;
 		case 0x07: // VCOUNT byte 2 (unused)
 			return 0;
+		case 0x08: return BG0Control.getLow();
+		case 0x09: return BG0Control.getHigh();
+		case 0x0A: return BG1Control.getLow();
+		case 0x0B: return BG1Control.getHigh();
+		case 0x0C: return BG2Control.getLow();
+		case 0x0D: return BG2Control.getHigh();
+		case 0x0E: return BG3Control.getLow();
+		case 0x0F: return BG3Control.getHigh();
+		case 0x10: case 0x11: case 0x12: case 0x13: case 0x14: case 0x15: case 0x16: case 0x17:
+		case 0x18: case 0x19: case 0x1A: case 0x1B: case 0x1C: case 0x1D: case 0x1E: case 0x1F:
+			return 0; // BG Scroll Offsets are Write-Only
 		default:
 			logging::error("Read from unhandled GPU register: " + helpers::intToHex(addr), "gpu");
 			return 0;
@@ -252,4 +358,36 @@ void gpu::displayScreen()
 	SDL_UpdateTexture(gpu::screenTexture, NULL, gpu::screenData, xResolution * 3);
 	SDL_RenderCopy(gpu::screenRenderer, gpu::screenTexture, NULL, NULL);
 	SDL_RenderPresent(gpu::screenRenderer);
+}
+
+void bgControl::setLow(uint8_t value)
+{
+	priority = value & 0x3;
+	charBaseBlock = (value >> 2) & 0x3;
+	mosaic = value & 0x40;
+	colourDepth = value & 0x80;
+}
+
+void bgControl::setHigh(uint8_t value)
+{
+	screenBaseBlock = value & 0x1F;
+	displayOverflow = value & 0x20;
+	screenSize = (value >> 6) & 0x3;
+}
+
+uint8_t bgControl::getLow()
+{
+	uint8_t ret = priority
+		| (charBaseBlock << 2)
+		| ((uint8_t)mosaic << 6)
+		| ((uint8_t)colourDepth << 7);
+	return ret;
+}
+
+uint8_t bgControl::getHigh()
+{
+	uint8_t ret = screenBaseBlock
+		| ((uint8_t)displayOverflow << 5)
+		| (screenSize << 6);
+	return ret;
 }

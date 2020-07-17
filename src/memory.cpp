@@ -78,7 +78,7 @@ uint8_t memory::get8(uint32_t addr)
 		}
 		else if (addr < 0x40000B0)
 		{
-			//logging::error("Tried to read from sound register: " + helpers::intToHex(addr), "memory");
+			logging::error("Tried to read from sound register: " + helpers::intToHex(addr), "memory");
 			return 0;
 		}
 		else if (addr < 0x4000100)
@@ -205,7 +205,7 @@ void memory::set8(uint32_t addr, uint8_t value)
 		}
 		else if (addr < 0x40000B0)
 		{
-			//logging::error("Tried to set sound register: " + helpers::intToHex(addr), "memory");
+			logging::error("Tried to set sound register: " + helpers::intToHex(addr), "memory");
 		}
 		else if (addr < 0x4000100)
 		{
