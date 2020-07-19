@@ -24,6 +24,20 @@ arm7tdmi::arm7tdmi(memory* mem, bool bios)
 			0, //R13_irq
 			0, //R14_irq
 			0, //SPSR_irq
+			0, //R13_abt;
+			0, //R14_abt;
+			0, //SPSR_abt;
+			0, //R13_und;
+			0, //R14_und;
+			0, //SPSR_und;
+			0, //R8_fiq;
+			0, //R9_fiq;
+			0, //R10_fiq;
+			0, //R11_fiq;
+			0, //R12_fiq;
+			0, //R13_fiq;
+			0, //R14_fiq;
+			0, //SPSR_fiq;
 		};
 	}
 	else
@@ -38,6 +52,20 @@ arm7tdmi::arm7tdmi(memory* mem, bool bios)
 			0x3007FA0, //R13_irq
 			0, //R14_irq
 			0, //SPSR_irq
+			0, //R13_abt;
+			0, //R14_abt;
+			0, //SPSR_abt;
+			0, //R13_und;
+			0, //R14_und;
+			0, //SPSR_und;
+			0, //R8_fiq;
+			0, //R9_fiq;
+			0, //R10_fiq;
+			0, //R11_fiq;
+			0, //R12_fiq;
+			0, //R13_fiq;
+			0, //R14_fiq;
+			0, //SPSR_fiq;
 		};
 	}
 	flushPipeline();
@@ -87,57 +115,130 @@ bool arm7tdmi::checkCondCode(uint32_t instr)
 
 uint32_t arm7tdmi::getReg(int index)
 {
-	if (index == 13)
+	switch (index)
 	{
-		switch (state.CPSR & 0xF)
-		{
-			case 0b0010: return state.R13_irq;
-			case 0b0011: return state.R13_svc;
-			default: return state.R[13];
-		}
-	}
-	else if (index == 14)
-	{
-		switch (state.CPSR & 0xF)
-		{
-			case 0b0010: return state.R14_irq;
-			case 0b0011: return state.R14_svc;
-			default: return state.R[14];
-		}
-	}
-	else
-	{
-		return state.R[index];
+		case 8:
+			switch (state.CPSR & 0xF)
+			{
+				case 0b0001: return state.R8_fiq;
+				default: return state.R[index];
+			}
+		case 9:
+			switch (state.CPSR & 0xF)
+			{
+				case 0b0001: return state.R9_fiq;
+				default: return state.R[index];
+			}
+		case 10:
+			switch (state.CPSR & 0xF)
+			{
+				case 0b0001: return state.R10_fiq;
+				default: return state.R[index];
+			}
+		case 11:
+			switch (state.CPSR & 0xF)
+			{
+				case 0b0001: return state.R11_fiq;
+				default: return state.R[index];
+			}
+		case 12:
+			switch (state.CPSR & 0xF)
+			{
+				case 0b0001: return state.R12_fiq;
+				default: return state.R[index];
+			}
+		case 13:
+			switch (state.CPSR & 0xF)
+			{
+				case 0b0001: return state.R13_fiq;
+				case 0b0010: return state.R13_irq;
+				case 0b0011: return state.R13_svc;
+				case 0b0111: return state.R13_abt;
+				case 0b1011: return state.R13_und;
+				default: return state.R[13];
+			}
+		case 14:
+			switch (state.CPSR & 0xF)
+			{
+				case 0b0001: return state.R14_fiq;
+				case 0b0010: return state.R14_irq;
+				case 0b0011: return state.R14_svc;
+				case 0b0111: return state.R14_abt;
+				case 0b1011: return state.R14_und;
+				default: return state.R[14];
+			}
+		default: return state.R[index];
 	}
 }
 
 void arm7tdmi::setReg(int index, uint32_t value)
 {
-	if (index == 13)
+	switch (index)
 	{
-		switch (state.CPSR & 0xF)
-		{
-			case 0b0010: state.R13_irq = value; break;
-			case 0b0011: state.R13_svc = value; break;
-			default: state.R[13] = value; break;
-		}
-	}
-	else if (index == 14)
-	{
-		switch (state.CPSR & 0xF)
-		{
-			case 0b0010: state.R14_irq = value; break;
-			case 0b0011: state.R14_svc = value; break;
-			default: state.R[14] = value; break;
-		}
-	}
-	else
-	{
-		state.R[index] = value;
-		if (index == 15)
-		{
-			Pipeline.pendingFlush = true;
-		}
+		case 8:
+			switch (state.CPSR & 0xF)
+			{
+				case 0b0001: state.R8_fiq = value; break;
+				default: state.R[index] = value; break;
+			}
+			break;
+		case 9:
+			switch (state.CPSR & 0xF)
+			{
+				case 0b0001: state.R9_fiq = value; break;
+				default: state.R[index] = value; break;
+			}
+			break;
+		case 10:
+			switch (state.CPSR & 0xF)
+			{
+				case 0b0001: state.R10_fiq = value; break;
+				default: state.R[index] = value; break;
+			}
+			break;
+		case 11:
+			switch (state.CPSR & 0xF)
+			{
+				case 0b0001: state.R11_fiq = value; break;
+				default: state.R[index] = value; break;
+			}
+			break;
+		case 12:
+			switch (state.CPSR & 0xF)
+			{
+				case 0b0001: state.R12_fiq = value; break;
+				default: state.R[index] = value; break;
+			}
+			break;
+		case 13:
+			switch (state.CPSR & 0xF)
+			{
+				case 0b0001: state.R13_fiq = value; break;
+				case 0b0010: state.R13_irq = value; break;
+				case 0b0011: state.R13_svc = value; break;
+				case 0b0111: state.R13_abt = value; break;
+				case 0b1011: state.R13_und = value; break;
+				default: state.R[13] = value; break;
+			}
+			break;
+		case 14:
+			switch (state.CPSR & 0xF)
+			{
+				case 0b0001: state.R14_fiq = value; break;
+				case 0b0010: state.R14_irq = value; break;
+				case 0b0011: state.R14_svc = value; break;
+				case 0b0111: state.R14_abt = value; break;
+				case 0b1011: state.R14_und = value; break;
+				default: state.R[14] = value; break;
+			}
+			break;
+		default:
+			state.R[index] = value;
+			if (index == 15)
+			{
+				Pipeline.pendingFlush = true;
+			}
+			break;
 	}
 }
 
@@ -145,8 +246,11 @@ uint32_t arm7tdmi::getSPSR()
 {
 	switch (state.CPSR & 0xF)
 	{
+		case 0b0001: return state.SPSR_fiq;
 		case 0b0010: return state.SPSR_irq;
 		case 0b0011: return state.SPSR_svc;
+		case 0b0111: return state.SPSR_abt;
+		case 0b1011: return state.SPSR_und;
 		default: logging::error("Can't get SPSR in User/System mode", "arm7tdmi"); return 0;
 	}
 }
@@ -155,8 +259,11 @@ void arm7tdmi::setSPSR(uint32_t value)
 {
 	switch (state.CPSR & 0xF)
 	{
+		case 0b0001: state.SPSR_fiq = value; break;
 		case 0b0010: state.SPSR_irq = value; break;
 		case 0b0011: state.SPSR_svc = value; break;
+		case 0b0111: state.SPSR_abt = value; break;
+		case 0b1011: state.SPSR_und = value; break;
 		default: logging::error("Can't set SPSR in User/System mode", "arm7tdmi"); break;
 	}
 }
@@ -452,7 +559,7 @@ void arm7tdmi::execute()
 			case instruction::THUMB_14: THUMB_PushPop(currentInstruction); break;
 			case instruction::THUMB_15: THUMB_MultipleLoadStore(currentInstruction); break;
 			case instruction::THUMB_16: THUMB_ConditionalBranch(currentInstruction); break;
-			case instruction::THUMB_17: softwareInterrupt(); logging::info("thumb swi: " + helpers::intToHex(currentInstruction)); break;
+			case instruction::THUMB_17: softwareInterrupt(); break;
 			case instruction::THUMB_18: THUMB_UnconditionalBranch(currentInstruction); break;
 			case instruction::THUMB_19: THUMB_LongBranchLink(currentInstruction); break;
 			default: logging::fatal("Invalid instruction in THUMB pipeline", "arm7tdmi"); break;
@@ -474,7 +581,7 @@ void arm7tdmi::execute()
 				case instruction::ARM_10: ARM_HalfwordDataTransfer(currentInstruction); break;
 				case instruction::ARM_11: ARM_BlockDataTransfer(currentInstruction); break;
 				case instruction::ARM_12: ARM_SingleDataSwap(currentInstruction); break;
-				case instruction::ARM_13: softwareInterrupt(); logging::info("arm swi: " + helpers::intToHex(currentInstruction)); break;
+				case instruction::ARM_13: softwareInterrupt(); break;
 				default: logging::fatal("Invalid instruction in ARM pipeline", "arm7tdmi"); break;
 			}
 		}
@@ -509,10 +616,6 @@ void arm7tdmi::softwareInterrupt()
 	//setReg(14, getReg(15));
 	setSPSR(oldCPSR);
 	setReg(15, 0x00000008);
-
-	logging::info("r0 " + helpers::intToHex(getReg(0)));
-	logging::info("r1 " + helpers::intToHex(getReg(1)));
-	logging::info("r2 " + helpers::intToHex(getReg(2)));
 }
 
 // ARM Instructions
@@ -705,7 +808,6 @@ void arm7tdmi::ARM_DataProcessing(uint32_t currentInstruction)
 		if (setCPSR)
 		{
 			state.CPSR = getSPSR();
-			logging::info("return " + helpers::intToHex(getReg(15)));
 		}
 		if ((state.R[15] & 0x1) || (state.CPSR & 0x20))
 		{

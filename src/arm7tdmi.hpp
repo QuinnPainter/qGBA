@@ -46,6 +46,20 @@ struct cpuState
 	uint32_t R13_irq;
 	uint32_t R14_irq;
 	uint32_t SPSR_irq;
+	uint32_t R13_abt;
+	uint32_t R14_abt;
+	uint32_t SPSR_abt;
+	uint32_t R13_und;
+	uint32_t R14_und;
+	uint32_t SPSR_und;
+	uint32_t R8_fiq;
+	uint32_t R9_fiq;
+	uint32_t R10_fiq;
+	uint32_t R11_fiq;
+	uint32_t R12_fiq;
+	uint32_t R13_fiq;
+	uint32_t R14_fiq;
+	uint32_t SPSR_fiq;
 };
 
 struct pipeline
