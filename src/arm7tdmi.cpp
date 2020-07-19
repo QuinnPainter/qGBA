@@ -452,7 +452,7 @@ void arm7tdmi::execute()
 			case instruction::THUMB_14: THUMB_PushPop(currentInstruction); break;
 			case instruction::THUMB_15: THUMB_MultipleLoadStore(currentInstruction); break;
 			case instruction::THUMB_16: THUMB_ConditionalBranch(currentInstruction); break;
-			case instruction::THUMB_17: logging::error("Unimplemented THUMB instruction: Software Interrupt: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+			case instruction::THUMB_17: softwareInterrupt(); logging::info("thumb swi: " + helpers::intToHex(currentInstruction)); break;
 			case instruction::THUMB_18: THUMB_UnconditionalBranch(currentInstruction); break;
 			case instruction::THUMB_19: THUMB_LongBranchLink(currentInstruction); break;
 			default: logging::fatal("Invalid instruction in THUMB pipeline", "arm7tdmi"); break;
@@ -474,7 +474,7 @@ void arm7tdmi::execute()
 				case instruction::ARM_10: ARM_HalfwordDataTransfer(currentInstruction); break;
 				case instruction::ARM_11: ARM_BlockDataTransfer(currentInstruction); break;
 				case instruction::ARM_12: ARM_SingleDataSwap(currentInstruction); break;
-				case instruction::ARM_13: logging::error("Unimplemented instruction: Software Interrupt: " + helpers::intToHex(currentInstruction), "arm7tdmi"); break;
+				case instruction::ARM_13: softwareInterrupt(); logging::info("arm swi: " + helpers::intToHex(currentInstruction)); break;
 				default: logging::fatal("Invalid instruction in ARM pipeline", "arm7tdmi"); break;
 			}
 		}
@@ -491,6 +491,28 @@ void arm7tdmi::flushPipeline()
 	Pipeline.instrOperation[0] = instruction::PIPELINE_FILL;
 	Pipeline.instrOperation[1] = instruction::PIPELINE_FILL;
 	Pipeline.instrOperation[2] = instruction::PIPELINE_FILL;
+}
+
+void arm7tdmi::softwareInterrupt()
+{
+	// Switch to Supervisor mode, disable IRQ, switch to ARM
+	uint32_t oldCPSR = state.CPSR;
+	state.CPSR = (state.CPSR & 0xFFFFFF00) | 0b11010011;
+	if (oldCPSR & 0x20)
+	{
+		setReg(14, getReg(15) - 2);
+	}
+	else
+	{
+		setReg(14, getReg(15) - 4);
+	}
+	//setReg(14, getReg(15));
+	setSPSR(oldCPSR);
+	setReg(15, 0x00000008);
+
+	logging::info("r0 " + helpers::intToHex(getReg(0)));
+	logging::info("r1 " + helpers::intToHex(getReg(1)));
+	logging::info("r2 " + helpers::intToHex(getReg(2)));
 }
 
 // ARM Instructions
@@ -590,9 +612,10 @@ void arm7tdmi::ARM_DataProcessing(uint32_t currentInstruction)
 		}
 	}
 
+	bool setCPSR = false;
 	if (setFlag && (destReg == 15))
 	{
-		state.CPSR = getSPSR();
+		setCPSR = true;
 		setFlag = false;
 	}
 
@@ -679,7 +702,12 @@ void arm7tdmi::ARM_DataProcessing(uint32_t currentInstruction)
 
 	if (destReg == 15)
 	{
-		if (state.R[15] & 0x1)
+		if (setCPSR)
+		{
+			state.CPSR = getSPSR();
+			logging::info("return " + helpers::intToHex(getReg(15)));
+		}
+		if ((state.R[15] & 0x1) || (state.CPSR & 0x20))
 		{
 			state.CPSR |= 0x20;
 			setReg(15, getReg(15) & ~0x1);

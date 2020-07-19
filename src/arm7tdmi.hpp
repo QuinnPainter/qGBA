@@ -74,6 +74,7 @@ class arm7tdmi
 		void decode();
 		void execute();
 		void flushPipeline();
+		void softwareInterrupt();
 
 		//ARM instructions
 		void ARM_BranchExchange(uint32_t currentInstruction);

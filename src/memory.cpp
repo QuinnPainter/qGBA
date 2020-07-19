@@ -42,7 +42,10 @@ uint8_t memory::get8(uint32_t addr)
 		{
 			return bios[addr];
 		}
-		//logging::error("Tried to access BIOS area: " + helpers::intToHex(addr), "memory");
+		else
+		{
+			logging::error("BIOS Read, but it's not loaded: " + helpers::intToHex(addr), "memory");
+		}
 		return 0;
 	}
 	else if (addr < 0x02000000)

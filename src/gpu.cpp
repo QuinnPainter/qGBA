@@ -313,10 +313,10 @@ void gpu::setRegister(uint32_t addr, uint8_t value)
 		case 0x05: // DISPSTAT byte 2
 			break;
 		case 0x06: // VCOUNT byte 1
-			logging::error("Write to VCOUNT: 0x4000006", "gpu");
+			logging::warning("Write to VCOUNT: 0x4000006", "gpu");
 			break;
 		case 0x07: // VCOUNT byte 2
-			logging::error("Write to VCOUNT: 0x4000007", "gpu");
+			logging::warning("Write to VCOUNT: 0x4000007", "gpu");
 			break;
 		case 0x08: BG0Control.setLow(value); break;
 		case 0x09: BG0Control.setHigh(value); break;
