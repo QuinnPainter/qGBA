@@ -34,9 +34,10 @@
 In logical OR mode, an interrupt is requested when at least one of the selected buttons is pressed.
 In logical AND mode, an interrupt is requested when ALL of the selected buttons are pressed.*/
 
-input::input()
+input::input(interrupt* Interrupt)
 {
-	keyState = 0x3FF; // All buttons released
+    this->Interrupt = Interrupt;
+    keyState = 0x3FF; // All buttons released
 	keyInterruptState = 0; // Key interrupts disabled
 }
 
@@ -55,6 +56,26 @@ void input::keyChanged(SDL_Keycode key, bool value)
         case SDLK_a:        setStateBit(1, value); break;
         case SDLK_s:        setStateBit(0, value); break;
 	}
+    if (keyInterruptState & 0x4000) // Are key IRQs enabled?
+    {
+        if (keyInterruptState & 0x8000)
+        {
+            // Logical AND: interrupt when all selected buttons are pressed
+            uint16_t buttonInterruptsEnabled = keyInterruptState & 0x3FF;
+            if ((buttonInterruptsEnabled & (~keyState)) == buttonInterruptsEnabled)
+            {
+                Interrupt->requestInterrupt(interruptType::Keypad);
+            }
+        }
+        else
+        {
+            // Logical OR: interrupt when at least one selected button is pressed
+            if (keyInterruptState & (~keyState))
+            {
+                Interrupt->requestInterrupt(interruptType::Keypad);
+            }
+        }
+    }
 }
 
 void input::setStateBit(uint8_t index, bool value)
@@ -75,6 +96,9 @@ uint8_t input::getRegister(uint32_t addr)
             return keyInterruptState & 0xFF;
         case 0x4000133: // KEYCNT byte 2
             return keyInterruptState >> 8;
+        default:
+            logging::error("this should never happen: invalid getRegister in input", "input");
+            return 0;
     }
 }
 
@@ -92,6 +116,9 @@ void input::setRegister(uint32_t addr, uint8_t value)
         case 0x4000133: // KEYCNT byte 2
             keyInterruptState &= 0x3CFF;
             keyInterruptState |= ((uint16_t)value << 8) & 0xC300;
+            break;
+        default:
+            logging::error("this should never happen: invalid setRegister in input", "input");
             break;
     }
 }

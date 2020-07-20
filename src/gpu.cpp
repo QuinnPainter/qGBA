@@ -13,6 +13,7 @@ the graphics hardware processes background and obj (sprite) data and draws it on
 the screen, while the HBlank and VBlank periods are left open so that program code
 can modify background and obj data without risk of creating graphical artifacts. */
 
+constexpr int hDrawCycles = 960;
 constexpr int cyclesPerScanline = 1232;
 constexpr int vDrawScanlines = 160;
 constexpr int vBlankScanlines = 68;
@@ -22,11 +23,18 @@ constexpr int yResolution = 160;
 constexpr int xWindowSize = xResolution * 2;
 constexpr int yWindowSize = yResolution * 2;
 
-gpu::gpu()
+gpu::gpu(interrupt* Interrupt)
 {
+	this->Interrupt = Interrupt;
 	cycleCounter = 0;
 	currentScanline = 0;
 	vblank = false;
+	hblank = false;
+	vcountMatch = false;
+	vCountSetting = 0;
+	vblankIRQEnable = false;
+	hblankIRQEnable = false;
+	vcountIRQEnable = false;
 	paletteRAM = new uint8_t[1024];
 	vram = new uint8_t[98304];
 	objectRAM = new uint8_t[1024];
@@ -63,6 +71,12 @@ gpu::~gpu()
 void gpu::step(int cycles)
 {
 	cycleCounter += cycles;
+	bool oldhblank = hblank;
+	hblank = cycleCounter >= hDrawCycles;
+	if (hblankIRQEnable && (!oldhblank && hblank))
+	{
+		Interrupt->requestInterrupt(interruptType::HBlank);
+	}
 	if (cycleCounter >= cyclesPerScanline)
 	{
 		cycleCounter %= cyclesPerScanline;
@@ -74,6 +88,10 @@ void gpu::step(int cycles)
 		if (currentScanline == vDrawScanlines)
 		{
 			vblank = true;
+			if (vblankIRQEnable)
+			{
+				Interrupt->requestInterrupt(interruptType::VBlank);
+			}
 			displayScreen();
 		}
 		if (currentScanline == vDrawScanlines + vBlankScanlines)
@@ -81,7 +99,13 @@ void gpu::step(int cycles)
 			vblank = false;
 			currentScanline = 0;
 		}
+		vcountMatch = (currentScanline == vCountSetting);
+		if (vcountIRQEnable && vcountMatch)
+		{
+			Interrupt->requestInterrupt(interruptType::VCounter);
+		}
 	}
+	
 }
 
 void gpu::drawScanline()
@@ -277,7 +301,7 @@ uint8_t gpu::getVRAM(uint32_t addr)
 	}
 	else if (addr >= 0x07000000 && addr < 0x07000400)
 	{
-		return objectRAM[addr - 07000000];
+		return objectRAM[addr - 0x07000000];
 	}
 	else
 	{
@@ -292,7 +316,10 @@ void gpu::setRegister(uint32_t addr, uint8_t value)
 	{
 		case 0x00: // DISPCNT byte 1
 			videoMode = value & 0x7;
-			logging::important("Switched to video mode: " + helpers::intToHex(videoMode), "gpu");
+			if (videoMode == 1 || videoMode == 2)
+			{
+				logging::error("Switched to unimplemented video mode: " + helpers::intToHex(videoMode), "gpu");
+			}
 			if (videoMode > 5)
 			{
 				logging::fatal("Switched to invalid video mode: " + helpers::intToHex(videoMode), "gpu");
@@ -309,8 +336,12 @@ void gpu::setRegister(uint32_t addr, uint8_t value)
 		case 0x02: case 0x03: // Green Swap - unimplemented
 			break;
 		case 0x04: // DISPSTAT byte 1
+			vblankIRQEnable = value & 0x08;
+			hblankIRQEnable = value & 0x10;
+			vcountIRQEnable = value & 0x20;
 			break;
 		case 0x05: // DISPSTAT byte 2
+			vCountSetting = value;
 			break;
 		case 0x06: // VCOUNT byte 1
 			logging::warning("Write to VCOUNT: 0x4000006", "gpu");
@@ -371,11 +402,16 @@ uint8_t gpu::getRegister(uint32_t addr)
 			return 0;
 		case 0x04: // DISPSTAT byte 1
 		{
-			uint8_t ret = (uint8_t)vblank;
+			uint8_t ret = (uint8_t)vblank
+				| ((uint8_t)hblank << 1)
+				| ((uint8_t)vcountMatch << 2)
+				| ((uint8_t)vblankIRQEnable << 3)
+				| ((uint8_t)hblankIRQEnable << 4)
+				| ((uint8_t)vcountIRQEnable << 5);
 			return ret;
 		}
 		case 0x05: // DISPSTAT byte 2
-			return 0;
+			return vCountSetting;
 		case 0x06: // VCOUNT byte 1
 			return currentScanline;
 		case 0x07: // VCOUNT byte 2 (unused)

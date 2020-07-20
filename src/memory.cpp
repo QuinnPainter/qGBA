@@ -144,7 +144,7 @@ uint8_t memory::get8(uint32_t addr)
 		//ROM Wait State 2
 		return get8Cart(addr - 0x0C000000);
 	}
-	else if (addr < 0E010000)
+	else if (addr < 0x0E010000)
 	{
 		//Cart SRAM
 		logging::warning("Tried to read from Cart SRAM: " + helpers::intToHex(addr), "memory");

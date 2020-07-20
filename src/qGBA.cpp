@@ -141,8 +141,8 @@ int main(int argc, char** argv)
 	bool requestIRQ = false;
 	bool CPUHalt = false;
 	interrupt Interrupt(&requestIRQ, &CPUHalt);
-	gpu GPU{};
-	input Input{};
+	gpu GPU(&Interrupt);
+	input Input(&Interrupt);
 	memory mem(rom, romSize, bios, &GPU, &Input, &Interrupt);
 	arm7tdmi CPU(&mem, biosGiven, &requestIRQ, &CPUHalt);
 

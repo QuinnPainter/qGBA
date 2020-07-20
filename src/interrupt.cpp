@@ -48,6 +48,7 @@ void interrupt::setRegister(uint32_t addr, uint8_t value)
 			break;
 		case 0x209: // Interrupt Master Enable byte 2
 			break;
+		case 0x20A: case 0x20B: break; // Unused
 		case 0x301: // Low Power Mode Control
 			if (value & 0x80)
 			{
@@ -81,6 +82,7 @@ uint8_t interrupt::getRegister(uint32_t addr)
 			return interruptMasterEnable;
 		case 0x209: // Interrupt Master Enable byte 2
 			return 0;
+		case 0x20A: case 0x20B: return 0; // Unused
 		case 0x301: // Low Power Mode Control - write only
 			return 0;
 		default:

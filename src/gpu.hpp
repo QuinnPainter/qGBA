@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include "SDL.h"
+#include "interrupt.hpp"
 
 struct bgControl
 {
@@ -21,6 +22,7 @@ struct bgControl
 class gpu
 {
 	private:
+		interrupt* Interrupt;
 		SDL_Window* window;
 		SDL_Renderer* screenRenderer;
 		SDL_Texture* screenTexture;
@@ -51,11 +53,17 @@ class gpu
 		uint16_t BG3XOffset;
 		uint16_t BG3YOffset;
 		bool vblank;
+		bool hblank;
+		bool vcountMatch;
+		uint8_t vCountSetting;
+		bool vblankIRQEnable;
+		bool hblankIRQEnable;
+		bool vcountIRQEnable;
 
 		void drawScanline();
 		void plotPixel(uint8_t x, uint8_t y, uint16_t colour);
 	public:
-		gpu();
+		gpu(interrupt* Interrupt);
 		~gpu();
 		void step(int cycles);
 		void setVRAM(uint32_t addr, uint8_t value);
