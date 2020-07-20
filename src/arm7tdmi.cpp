@@ -284,7 +284,7 @@ void arm7tdmi::step()
 		state.R[15] += (state.CPSR & 0x20) ? 2 : 4;
 	}
 
-	//logging::info(helpers::intToHex(getReg(15)) + " " + helpers::intToHex(currentInstr));
+	//logging::info(helpers::intToHex(getReg(15)) + " " + helpers::intToHex(Pipeline.instrPipeline[Pipeline.pipelinePtr]));
 }
 
 void arm7tdmi::fetch()
@@ -757,14 +757,14 @@ void arm7tdmi::ARM_DataProcessing(uint32_t currentInstruction)
 			if (setFlag) { setFlagsArithmetic(operand1, operand2 + carryIn, result, true); }
 			break;
 		case 0b0110: //SBC
-			result = operand1 - operand2 + carryIn - 1;
+			result = operand1 - operand2 + (uint32_t)carryIn - 1;
 			setReg(destReg, result);
-			if (setFlag) { setFlagsArithmetic(operand1, operand2 + carryIn - 1, result, false); }
+			if (setFlag) { setFlagsArithmetic(operand1, operand2 + (uint32_t)carryIn - 1, result, false); }
 			break;
 		case 0b0111: //RSC
-			result = operand2 - operand1 + carryIn - 1;
+			result = operand2 - operand1 + (uint32_t)carryIn - 1;
 			setReg(destReg, result);
-			if (setFlag) { setFlagsArithmetic(operand2, operand1 + carryIn - 1, result, false); }
+			if (setFlag) { setFlagsArithmetic(operand2, operand1 + (uint32_t)carryIn - 1, result, false); }
 			break;
 		case 0b1000: //TST
 			result = operand1 & operand2;
@@ -1188,9 +1188,9 @@ void arm7tdmi::ARM_BlockDataTransfer(uint32_t currentInstruction)
 
 	if (base_reg == 15) { logging::warning("ARM_BlockDataTransfer: R15 used as Base Register", "arm7tdmi"); }
 
-	//Force USR mode if PSR bit is set
-	//cpu_modes temp_mode = current_cpu_mode;
-	//if (psr) { current_cpu_mode = USR; }
+	uint8_t oldMode = 0;
+	// Force USR mode
+	if (psr) { oldMode = state.CPSR & 0x1F; state.CPSR &= ~0xF; }
 
 	uint32_t base_addr = getReg(base_reg);
 	uint32_t old_base = base_addr;
@@ -1289,7 +1289,8 @@ void arm7tdmi::ARM_BlockDataTransfer(uint32_t currentInstruction)
 		logging::warning("ARM_BlockDataTransfer: Instruction uses empty register list", "arm7tdmi");
 	}
 
-	//if (psr) { current_cpu_mode = temp_mode; }
+	// Restore old mode
+	if (psr) { state.CPSR |= oldMode; }
 }
 
 void arm7tdmi::ARM_SingleDataSwap(uint32_t currentInstruction)

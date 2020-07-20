@@ -29,7 +29,7 @@ uint8_t memory::get8Cart(uint32_t addr)
 	}
 	else
 	{
-		logging::warning("Read outside cart ROM", "memory");
+		//logging::warning("Read outside cart ROM", "memory");
 		return 0; // Open bus?
 	}
 }
