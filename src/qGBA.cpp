@@ -4,6 +4,7 @@
 #include "memory.hpp"
 #include "gpu.hpp"
 #include "input.hpp"
+#include "interrupt.hpp"
 #include "SDL.h"
 
 int main(int argc, char** argv)
@@ -137,10 +138,13 @@ int main(int argc, char** argv)
 	}
 	bool biosGiven = bios != nullptr;
 
+	bool requestIRQ = false;
+	bool CPUHalt = false;
+	interrupt Interrupt(&requestIRQ, &CPUHalt);
 	gpu GPU{};
 	input Input{};
-	memory mem(rom, romSize, bios, &GPU, &Input);
-	arm7tdmi CPU(&mem, biosGiven);
+	memory mem(rom, romSize, bios, &GPU, &Input, &Interrupt);
+	arm7tdmi CPU(&mem, biosGiven, &requestIRQ, &CPUHalt);
 
 	bool quit = false;
 	SDL_Event event;

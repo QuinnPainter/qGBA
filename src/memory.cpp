@@ -2,13 +2,14 @@
 #include "logging.hpp"
 #include "helpers.hpp"
 
-memory::memory(uint8_t* rom, uint32_t romSize, uint8_t* bios, gpu* GPU, input* Input)
+memory::memory(uint8_t* rom, uint32_t romSize, uint8_t* bios, gpu* GPU, input* Input, interrupt* Interrupt)
 {
 	cartrom = rom;
 	this->romSize = romSize;
 	this->bios = bios;
 	this->GPU = GPU;
 	this->Input = Input;
+	this->Interrupt = Interrupt;
 	iwram = new uint8_t[32768];
 	ewram = new uint8_t[262144];
 	memset(iwram, 0, 32768);
@@ -110,8 +111,7 @@ uint8_t memory::get8(uint32_t addr)
 		}
 		else if (addr < 0x4000804)
 		{
-			logging::error("Tried to read from control register: " + helpers::intToHex(addr), "memory");
-			return 0;
+			return Interrupt->getRegister(addr);
 		}
 		else
 		{
@@ -232,7 +232,7 @@ void memory::set8(uint32_t addr, uint8_t value)
 		}
 		else if (addr < 0x4000804)
 		{
-			logging::error("Tried to set control register: " + helpers::intToHex(addr), "memory");
+			Interrupt->setRegister(addr, value);
 		}
 		else
 		{

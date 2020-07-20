@@ -167,6 +167,7 @@
     <ClCompile Include="src\gpu.cpp" />
     <ClCompile Include="src\helpers.cpp" />
     <ClCompile Include="src\input.cpp" />
+    <ClCompile Include="src\interrupt.cpp" />
     <ClCompile Include="src\logging.cpp" />
     <ClCompile Include="src\memory.cpp" />
     <ClCompile Include="src\qGBA.cpp" />
@@ -176,6 +177,7 @@
     <ClInclude Include="src\gpu.hpp" />
     <ClInclude Include="src\helpers.hpp" />
     <ClInclude Include="src\input.hpp" />
+    <ClInclude Include="src\interrupt.hpp" />
     <ClInclude Include="src\logging.hpp" />
     <ClInclude Include="src\memory.hpp" />
   </ItemGroup>

@@ -73,11 +73,13 @@ struct pipeline
 class arm7tdmi
 {
 	public:
-		arm7tdmi(memory* mem, bool bios);
+		arm7tdmi(memory* mem, bool bios, bool* requestIRQ, bool* halted);
 		void step();
 	private:
 		cpuState state;
 		pipeline Pipeline;
+		bool* requestIRQ;
+		bool* halted;
 		memory* Memory;
 		bool checkCondCode(uint32_t instr);
 		uint32_t getReg(int index);
@@ -88,6 +90,7 @@ class arm7tdmi
 		void decode();
 		void execute();
 		void flushPipeline();
+		void processInterrupt();
 		void softwareInterrupt();
 
 		//ARM instructions

@@ -10,7 +10,7 @@ constexpr uint32_t Zflag = 0x40000000;
 constexpr uint32_t Cflag = 0x20000000;
 constexpr uint32_t Vflag = 0x10000000;
 
-arm7tdmi::arm7tdmi(memory* mem, bool bios)
+arm7tdmi::arm7tdmi(memory* mem, bool bios, bool* requestIRQ, bool* halted)
 {
 	Memory = mem;
 	if (bios)
@@ -68,6 +68,8 @@ arm7tdmi::arm7tdmi(memory* mem, bool bios)
 			0, //SPSR_fiq;
 		};
 	}
+	this->requestIRQ = requestIRQ;
+	this->halted = halted;
 	flushPipeline();
 }
 
@@ -270,9 +272,16 @@ void arm7tdmi::setSPSR(uint32_t value)
 
 void arm7tdmi::step()
 {
+	if (*halted)
+	{
+		return;
+	}
+
 	fetch();
 	decode();
 	execute();
+
+	processInterrupt();
 
 	if (Pipeline.pendingFlush)
 	{
@@ -598,6 +607,25 @@ void arm7tdmi::flushPipeline()
 	Pipeline.instrOperation[0] = instruction::PIPELINE_FILL;
 	Pipeline.instrOperation[1] = instruction::PIPELINE_FILL;
 	Pipeline.instrOperation[2] = instruction::PIPELINE_FILL;
+}
+
+void arm7tdmi::processInterrupt()
+{
+	if (!(state.CPSR & 0x80) && *requestIRQ)
+	{
+		uint32_t oldCPSR = state.CPSR;
+		state.CPSR = (state.CPSR & 0xFFFFFF00) | 0b10010010;
+		if (oldCPSR & 0x20)
+		{
+			setReg(14, getReg(15) - 2);
+		}
+		else
+		{
+			setReg(14, getReg(15) - 4);
+		}
+		setSPSR(oldCPSR);
+		setReg(15, 0x00000018);
+	}
 }
 
 void arm7tdmi::softwareInterrupt()
