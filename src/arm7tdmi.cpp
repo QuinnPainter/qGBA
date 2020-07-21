@@ -2104,7 +2104,7 @@ void arm7tdmi::THUMB_ConditionalBranch(uint16_t currentInstruction)
 			doBranch = (((state.CPSR & Zflag) == 0) && ((bool)(state.CPSR & Nflag) == (bool)(state.CPSR & Vflag)));
 			break;
 		case 0xD: //BLE
-			doBranch = (((state.CPSR & Zflag) != 0) && ((bool)(state.CPSR & Nflag) != (bool)(state.CPSR & Vflag)));
+			doBranch = (((state.CPSR & Zflag) != 0) || ((bool)(state.CPSR & Nflag) != (bool)(state.CPSR & Vflag)));
 			break;
 		case 0xE: //Undefined
 			logging::error("Undefined condition 0xE in THUMB_ConditionalBranch", "arm7tdmi");
