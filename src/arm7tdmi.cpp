@@ -470,7 +470,6 @@ void arm7tdmi::decode()
 				// This is ARM6 - PSR Transfer. It's part of ARM5 - Data Processing.
 				Pipeline.instrOperation[pipelineIndex] = instruction::ARM_5;
 			}
-
 		}
 		else if (((currentInstr >> 26) & 0x3) == 0x0)
 		{
@@ -611,7 +610,13 @@ void arm7tdmi::flushPipeline()
 
 void arm7tdmi::processInterrupt()
 {
-	if (!(state.CPSR & 0x80) && *requestIRQ)
+	if (Pipeline.instrOperation[0] == instruction::PIPELINE_FILL
+		|| Pipeline.instrOperation[1] == instruction::PIPELINE_FILL
+		|| Pipeline.instrOperation[2] == instruction::PIPELINE_FILL)
+	{
+		return; // Wait for pipeline to be full before processing interrupts
+	}
+	if ((!(state.CPSR & 0x80)) && *requestIRQ)
 	{
 		uint32_t oldCPSR = state.CPSR;
 		state.CPSR = (state.CPSR & 0xFFFFFF00) | 0b10010010;
@@ -1528,9 +1533,9 @@ void arm7tdmi::THUMB_ALUOps(uint16_t currentInstruction)
 			setReg(dest_reg, result);
 			break;
 		case 0x6: //SBC
-			carry_out ^= 0x1; //Invert carry
+			//carry_out ^= 0x1; //Invert carry
 	
-			result = (input - operand - carry_out);
+			result = (input - (operand - carry_out + 1));
 			//setFlagsArithmetic(input, operand + carry_out - 1, result, false);
 			setFlagsArithmetic(input, operand, result, false);
 			setReg(dest_reg, result);
