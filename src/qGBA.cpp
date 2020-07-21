@@ -5,6 +5,7 @@
 #include "gpu.hpp"
 #include "input.hpp"
 #include "interrupt.hpp"
+#include "timer.hpp"
 #include "SDL.h"
 
 int main(int argc, char** argv)
@@ -141,9 +142,10 @@ int main(int argc, char** argv)
 	bool requestIRQ = false;
 	bool CPUHalt = false;
 	interrupt Interrupt(&requestIRQ, &CPUHalt);
+	timers Timers(&Interrupt);
 	gpu GPU(&Interrupt);
 	input Input(&Interrupt);
-	memory mem(rom, romSize, bios, &GPU, &Input, &Interrupt);
+	memory mem(rom, romSize, bios, &GPU, &Input, &Interrupt, &Timers);
 	arm7tdmi CPU(&mem, biosGiven, &requestIRQ, &CPUHalt);
 
 	bool quit = false;
@@ -176,6 +178,7 @@ int main(int argc, char** argv)
 		{
 			CPU.step();
 			GPU.step(1);
+			Timers.step(1);
 		}
 	}
 

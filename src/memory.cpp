@@ -2,7 +2,7 @@
 #include "logging.hpp"
 #include "helpers.hpp"
 
-memory::memory(uint8_t* rom, uint32_t romSize, uint8_t* bios, gpu* GPU, input* Input, interrupt* Interrupt)
+memory::memory(uint8_t* rom, uint32_t romSize, uint8_t* bios, gpu* GPU, input* Input, interrupt* Interrupt, timers* Timers)
 {
 	cartrom = rom;
 	this->romSize = romSize;
@@ -10,6 +10,7 @@ memory::memory(uint8_t* rom, uint32_t romSize, uint8_t* bios, gpu* GPU, input* I
 	this->GPU = GPU;
 	this->Input = Input;
 	this->Interrupt = Interrupt;
+	this->Timers = Timers;
 	iwram = new uint8_t[32768];
 	ewram = new uint8_t[262144];
 	memset(iwram, 0, 32768);
@@ -92,8 +93,7 @@ uint8_t memory::get8(uint32_t addr)
 		}
 		else if (addr < 0x4000120)
 		{
-			logging::error("Tried to read from timer register: " + helpers::intToHex(addr), "memory");
-			return 0;
+			return Timers->getRegister(addr);
 		}
 		else if (addr < 0x4000130)
 		{
@@ -216,7 +216,7 @@ void memory::set8(uint32_t addr, uint8_t value)
 		}
 		else if (addr < 0x4000120)
 		{
-			logging::error("Tried to set timer register: " + helpers::intToHex(addr), "memory");
+			Timers->setRegister(addr, value);
 		}
 		else if (addr < 0x4000130)
 		{

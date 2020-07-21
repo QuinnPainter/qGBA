@@ -171,6 +171,7 @@
     <ClCompile Include="src\logging.cpp" />
     <ClCompile Include="src\memory.cpp" />
     <ClCompile Include="src\qGBA.cpp" />
+    <ClCompile Include="src\timer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\arm7tdmi.hpp" />
@@ -180,6 +181,7 @@
     <ClInclude Include="src\interrupt.hpp" />
     <ClInclude Include="src\logging.hpp" />
     <ClInclude Include="src\memory.hpp" />
+    <ClInclude Include="src\timer.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
