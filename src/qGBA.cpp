@@ -6,6 +6,7 @@
 #include "input.hpp"
 #include "interrupt.hpp"
 #include "timer.hpp"
+#include "dma.hpp"
 #include "SDL.h"
 
 int main(int argc, char** argv)
@@ -142,11 +143,13 @@ int main(int argc, char** argv)
 	bool requestIRQ = false;
 	bool CPUHalt = false;
 	interrupt Interrupt(&requestIRQ, &CPUHalt);
+	dma DMA(&Interrupt);
 	timers Timers(&Interrupt);
-	gpu GPU(&Interrupt);
+	gpu GPU(&Interrupt, &DMA);
 	input Input(&Interrupt);
-	memory mem(rom, romSize, bios, &GPU, &Input, &Interrupt, &Timers);
+	memory mem(rom, romSize, bios, &GPU, &Input, &Interrupt, &Timers, &DMA);
 	arm7tdmi CPU(&mem, biosGiven, &requestIRQ, &CPUHalt);
+	DMA.setMemory(&mem);
 
 	bool quit = false;
 	SDL_Event event;
@@ -179,6 +182,7 @@ int main(int argc, char** argv)
 			CPU.step();
 			GPU.step(1);
 			Timers.step(1);
+			DMA.step(1);
 		}
 	}
 

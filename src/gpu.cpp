@@ -23,9 +23,10 @@ constexpr int yResolution = 160;
 constexpr int xWindowSize = xResolution * 2;
 constexpr int yWindowSize = yResolution * 2;
 
-gpu::gpu(interrupt* Interrupt)
+gpu::gpu(interrupt* Interrupt, dma* DMA)
 {
 	this->Interrupt = Interrupt;
+	this->DMA = DMA;
 	cycleCounter = 0;
 	currentScanline = 0;
 	vblank = false;
@@ -73,9 +74,13 @@ void gpu::step(int cycles)
 	cycleCounter += cycles;
 	bool oldhblank = hblank;
 	hblank = cycleCounter >= hDrawCycles;
-	if (hblankIRQEnable && (!oldhblank && hblank))
+	if (!oldhblank && hblank)
 	{
-		Interrupt->requestInterrupt(interruptType::HBlank);
+		DMA->videoBlank(false);
+		if (hblankIRQEnable)
+		{
+			Interrupt->requestInterrupt(interruptType::HBlank);
+		}
 	}
 	if (cycleCounter >= cyclesPerScanline)
 	{
@@ -88,6 +93,7 @@ void gpu::step(int cycles)
 		if (currentScanline == vDrawScanlines)
 		{
 			vblank = true;
+			DMA->videoBlank(true);
 			if (vblankIRQEnable)
 			{
 				Interrupt->requestInterrupt(interruptType::VBlank);

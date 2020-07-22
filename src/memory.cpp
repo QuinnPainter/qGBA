@@ -2,7 +2,7 @@
 #include "logging.hpp"
 #include "helpers.hpp"
 
-memory::memory(uint8_t* rom, uint32_t romSize, uint8_t* bios, gpu* GPU, input* Input, interrupt* Interrupt, timers* Timers)
+memory::memory(uint8_t* rom, uint32_t romSize, uint8_t* bios, gpu* GPU, input* Input, interrupt* Interrupt, timers* Timers, dma* DMA)
 {
 	cartrom = rom;
 	this->romSize = romSize;
@@ -11,6 +11,7 @@ memory::memory(uint8_t* rom, uint32_t romSize, uint8_t* bios, gpu* GPU, input* I
 	this->Input = Input;
 	this->Interrupt = Interrupt;
 	this->Timers = Timers;
+	this->DMA = DMA;
 	iwram = new uint8_t[32768];
 	ewram = new uint8_t[262144];
 	memset(iwram, 0, 32768);
@@ -88,8 +89,7 @@ uint8_t memory::get8(uint32_t addr)
 		}
 		else if (addr < 0x4000100)
 		{
-			logging::error("Tried to read from DMA register: " + helpers::intToHex(addr), "memory");
-			return 0;
+			return DMA->getRegister(addr);
 		}
 		else if (addr < 0x4000120)
 		{
@@ -150,7 +150,7 @@ uint8_t memory::get8(uint32_t addr)
 		logging::warning("Tried to read from Cart SRAM: " + helpers::intToHex(addr), "memory");
 		return 0;
 	}
-	else if (addr < 0xFFFFFFFF)
+	else if (addr <= 0xFFFFFFFF)
 	{
 		//Unused area
 		logging::warning("Tried to read from unused area: " + helpers::intToHex(addr), "memory");
@@ -212,7 +212,7 @@ void memory::set8(uint32_t addr, uint8_t value)
 		}
 		else if (addr < 0x4000100)
 		{
-			logging::error("Tried to set DMA register: " + helpers::intToHex(addr), "memory");
+			DMA->setRegister(addr, value);
 		}
 		else if (addr < 0x4000120)
 		{

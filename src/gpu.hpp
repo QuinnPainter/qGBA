@@ -2,6 +2,7 @@
 #include <cstdint>
 #include "SDL.h"
 #include "interrupt.hpp"
+#include "dma.hpp"
 
 struct bgControl
 {
@@ -23,6 +24,7 @@ class gpu
 {
 	private:
 		interrupt* Interrupt;
+		dma* DMA;
 		SDL_Window* window;
 		SDL_Renderer* screenRenderer;
 		SDL_Texture* screenTexture;
@@ -63,7 +65,7 @@ class gpu
 		void drawScanline();
 		void plotPixel(uint8_t x, uint8_t y, uint16_t colour);
 	public:
-		gpu(interrupt* Interrupt);
+		gpu(interrupt* Interrupt, dma* DMA);
 		~gpu();
 		void step(int cycles);
 		void setVRAM(uint32_t addr, uint8_t value);
