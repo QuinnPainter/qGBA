@@ -63,6 +63,7 @@ class gpu
 		bool vcountIRQEnable;
 
 		void drawScanline();
+		uint16_t paletteLookup(uint16_t paletteIndex);
 		void plotPixel(uint8_t x, uint8_t y, uint16_t colour);
 	public:
 		gpu(interrupt* Interrupt, dma* DMA);

@@ -126,94 +126,133 @@ void gpu::drawScanline()
 	{
 		case 0:
 		{
-			if (enableBG0)
+			for (int x = 0; x < xResolution; x++)
 			{
-				int mapXSize = (BG0Control.screenSize & 0x01) ? 512 : 256;
-				int mapYSize = (BG0Control.screenSize & 0x10) ? 512 : 256;
-				for (int x = 0; x < xResolution; x++)
+				uint16_t bgPaletteEntries[4] = { 0, 0, 0, 0 };
+				for (int bg = 0; bg < 4; bg++)
 				{
-					int adjustedX = (x + BG0XOffset) & 0x1FF;
-					int adjustedY = (currentScanline + BG0YOffset) & 0x1FF;
-					uint32_t mapBaseAddr = (uint32_t)BG0Control.screenBaseBlock << 11;
+					bool bgEnable;
+					bgControl BGControl;
+					uint16_t BGXOffset;
+					uint16_t BGYOffset;
+					switch (bg)
+					{
+						case 0: bgEnable = enableBG0; BGControl = BG0Control; BGXOffset = BG0XOffset; BGYOffset = BG0YOffset; break;
+						case 1: bgEnable = enableBG1; BGControl = BG1Control; BGXOffset = BG1XOffset; BGYOffset = BG1YOffset; break;
+						case 2: bgEnable = enableBG2; BGControl = BG2Control; BGXOffset = BG2XOffset; BGYOffset = BG2YOffset; break;
+						case 3: bgEnable = enableBG3; BGControl = BG3Control; BGXOffset = BG3XOffset; BGYOffset = BG3YOffset; break;
+					}
 
-					bool xOverflow = adjustedX >= 256;
-					bool yOverflow = adjustedY >= 256;
-					switch (BG0Control.screenSize)
+					if (bgEnable)
 					{
-						case 0x1:
-							if (xOverflow)
-							{
-								// we're in screenblock 1
-								mapBaseAddr += 2048;
-							}
-							break;
-						case 0x2:
-							if (yOverflow)
-							{
-								// we're in screenblock 1
-								mapBaseAddr += 2048;
-							}
-							break;
-						case 0x3:
-							if (xOverflow && yOverflow)
-							{
-								// we're in screenblock 3
-								mapBaseAddr += 2048 * 3;
-							}
-							else if (xOverflow)
-							{
-								// we're in screenblock 1
-								mapBaseAddr += 2048;
-							}
-							else if (yOverflow)
-							{
-								// we're in screenblock 2
-								mapBaseAddr += 2048 * 2;
-							}
-							break;
-					}
-					adjustedX %= 256;
-					adjustedY %= 256;
+						int mapXSize = (BGControl.screenSize & 0x01) ? 512 : 256;
+						int mapYSize = (BGControl.screenSize & 0x10) ? 512 : 256;
 
-					uint32_t mapEntryAddr = mapBaseAddr + ((adjustedX / 8) * 2) + ((adjustedY / 8) * 32 * 2);
-					uint16_t mapEntry = vram[mapEntryAddr] | (((uint16_t)vram[mapEntryAddr + 1]) << 8);
+						int adjustedX = (x + BGXOffset) & 0x1FF;
+						int adjustedY = (currentScanline + BGYOffset) & 0x1FF;
+						uint32_t mapBaseAddr = (uint32_t)BGControl.screenBaseBlock << 11;
 
-					uint32_t tileBaseAddr = (uint32_t)BG0Control.charBaseBlock << 14;
-					uint32_t tileAddr = tileBaseAddr + ((mapEntry & 0x3FF) * (BG0Control.colourDepth ? 64 : 32));
-					uint8_t tileRow = adjustedY % 8;
-					uint8_t tileColumn = adjustedX % 8;
-					if (mapEntry & 0x400) // Horizontal Flip
-					{
-						tileColumn = 7 - tileColumn;
-					}
-					if (mapEntry & 0x800) // Vertical flip
-					{
-						tileRow = 7 - tileRow;
-					}
-					if (BG0Control.colourDepth) // 256 colours, 1 palette.
-					{
-						uint8_t pixelEntryAddr = (tileRow * 8) + tileColumn;
-						uint16_t pixelEntry = vram[tileAddr + pixelEntryAddr];
-						uint16_t paletteColour = paletteRAM[pixelEntry * 2] | ((uint16_t)paletteRAM[(pixelEntry * 2) + 1] << 8);
-						plotPixel(x, currentScanline, paletteColour);
-					}
-					else // 16 colours, 16 palettes.
-					{
-						uint8_t paletteNum = mapEntry >> 12;
-						uint16_t paletteBaseAddr = paletteNum * 16;
-						uint16_t paletteEntryAddr = paletteBaseAddr;
-						uint8_t pixelEntryAddr = (tileRow * 4) + tileColumn / 2;
-						uint8_t pixelEntry = vram[tileAddr + pixelEntryAddr];
-						if (tileColumn & 1)
+						bool xOverflow = adjustedX >= 256;
+						bool yOverflow = adjustedY >= 256;
+						switch (BGControl.screenSize)
 						{
-							paletteEntryAddr += pixelEntry >> 4;
+							case 0x1:
+								if (xOverflow)
+								{
+									// we're in screenblock 1
+									mapBaseAddr += 2048;
+								}
+								break;
+							case 0x2:
+								if (yOverflow)
+								{
+									// we're in screenblock 1
+									mapBaseAddr += 2048;
+								}
+								break;
+							case 0x3:
+								if (xOverflow && yOverflow)
+								{
+									// we're in screenblock 3
+									mapBaseAddr += 2048 * 3;
+								}
+								else if (xOverflow)
+								{
+									// we're in screenblock 1
+									mapBaseAddr += 2048;
+								}
+								else if (yOverflow)
+								{
+									// we're in screenblock 2
+									mapBaseAddr += 2048 * 2;
+								}
+								break;
 						}
-						else
+						adjustedX %= 256;
+						adjustedY %= 256;
+
+						uint32_t mapEntryAddr = mapBaseAddr + ((adjustedX / 8) * 2) + ((adjustedY / 8) * 32 * 2);
+						uint16_t mapEntry = vram[mapEntryAddr] | (((uint16_t)vram[mapEntryAddr + 1]) << 8);
+
+						uint32_t tileBaseAddr = (uint32_t)BGControl.charBaseBlock << 14;
+						uint32_t tileAddr = tileBaseAddr + ((mapEntry & 0x3FF) * (BGControl.colourDepth ? 64 : 32));
+						uint8_t tileRow = adjustedY % 8;
+						uint8_t tileColumn = adjustedX % 8;
+						if (mapEntry & 0x400) // Horizontal Flip
 						{
-							paletteEntryAddr += pixelEntry & 0xF;
+							tileColumn = 7 - tileColumn;
 						}
-						uint16_t paletteColour = paletteRAM[paletteEntryAddr * 2] | ((uint16_t)paletteRAM[(paletteEntryAddr * 2) + 1] << 8);
-						plotPixel(x, currentScanline, paletteColour);
+						if (mapEntry & 0x800) // Vertical flip
+						{
+							tileRow = 7 - tileRow;
+						}
+						if (BGControl.colourDepth) // 256 colours, 1 palette.
+						{
+							uint8_t pixelEntryAddr = (tileRow * 8) + tileColumn;
+							uint16_t pixelEntry = vram[tileAddr + pixelEntryAddr];
+							bgPaletteEntries[bg] = pixelEntry;
+							//uint16_t paletteColour = paletteRAM[pixelEntry * 2] | ((uint16_t)paletteRAM[(pixelEntry * 2) + 1] << 8);
+							//plotPixel(x, currentScanline, paletteColour);
+						}
+						else // 16 colours, 16 palettes.
+						{
+							uint8_t paletteNum = mapEntry >> 12;
+							uint16_t paletteBaseAddr = paletteNum * 16;
+							uint16_t paletteEntryAddr = paletteBaseAddr;
+							uint8_t pixelEntryAddr = (tileRow * 4) + tileColumn / 2;
+							uint8_t pixelEntry = vram[tileAddr + pixelEntryAddr];
+							if (tileColumn & 1)
+							{
+								paletteEntryAddr += pixelEntry >> 4;
+							}
+							else
+							{
+								paletteEntryAddr += pixelEntry & 0xF;
+							}
+							bgPaletteEntries[bg] = paletteEntryAddr;
+							//uint16_t paletteColour = paletteRAM[paletteEntryAddr * 2] | ((uint16_t)paletteRAM[(paletteEntryAddr * 2) + 1] << 8);
+							//plotPixel(x, currentScanline, paletteColour);
+						}
+					}
+				}
+				uint16_t baseColour = paletteLookup(0);
+				plotPixel(x, currentScanline, baseColour);
+				int prioritySortedList[4];
+				for (int i = 0, listIndex = 0; i < 4; i++)
+				{
+					if (BG0Control.priority == i) { prioritySortedList[listIndex++] = 0; }
+					if (BG1Control.priority == i) { prioritySortedList[listIndex++] = 1; }
+					if (BG2Control.priority == i) { prioritySortedList[listIndex++] = 2; }
+					if (BG3Control.priority == i) { prioritySortedList[listIndex++] = 3; }
+				}
+				//for (int i = 3; i >= 0; i--)
+				for (int i = 0; i < 4; i++)
+				{
+					uint16_t bgPixPaletteEntry = bgPaletteEntries[prioritySortedList[i]];
+					if (bgPixPaletteEntry != 0)
+					{
+						plotPixel(x, currentScanline, paletteLookup(bgPixPaletteEntry));
+						break;
 					}
 				}
 			}
@@ -240,8 +279,7 @@ void gpu::drawScanline()
 				{
 					int addr = (currentScanline * xResolution) + x + (bitmapFrame ? 0xA000 : 0);
 					uint8_t paletteIndex = vram[addr];
-					uint16_t paletteColour = paletteRAM[paletteIndex * 2] | ((uint16_t)paletteRAM[(paletteIndex * 2) + 1] << 8);
-					plotPixel(x, currentScanline, paletteColour);
+					plotPixel(x, currentScanline, paletteLookup(paletteIndex));
 				}
 			}
 			break;
@@ -265,6 +303,11 @@ void gpu::drawScanline()
 			break;
 		}
 	}
+}
+
+uint16_t gpu::paletteLookup(uint16_t paletteIndex)
+{
+	return paletteRAM[paletteIndex * 2] | ((uint16_t)paletteRAM[(paletteIndex * 2) + 1] << 8);
 }
 
 void gpu::plotPixel(uint8_t x, uint8_t y, uint16_t colour)
